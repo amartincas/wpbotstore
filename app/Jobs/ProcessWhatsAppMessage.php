@@ -146,7 +146,7 @@ class ProcessWhatsAppMessage implements ShouldQueue
             }
 
             // Get the configured AI service for this store
-            $aiEngine = AiServiceFactory::make($this->store);
+            $aiEngine = AIServiceFactory::make($this->store);
 
             // Debug: Log the final prompt being sent to OpenAI
             Log::info("DEBUG - Final System Prompt enviado a OpenAI:", [
@@ -569,7 +569,7 @@ PROMPT;
             $extractionPrompt .= "\nAI Confirmation: {$lastAiResponse}\n";
 
             // Get AI to extract as JSON
-            $aiEngine = AiServiceFactory::make($this->store);
+            $aiEngine = AIServiceFactory::make($this->store);
             $jsonResponse = $aiEngine->getResponse(
                 "Extract lead information as JSON",
                 $extractionPrompt,
