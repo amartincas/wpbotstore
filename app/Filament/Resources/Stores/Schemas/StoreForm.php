@@ -5,15 +5,15 @@ namespace App\Filament\Resources\Stores\Schemas;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Textarea;
-use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
+use Filament\Schemas\Components\Utilities\Get;
 
 class StoreForm
 {
     public static function configure(Schema $schema): Schema
     {
         return $schema
-            ->components([
+            ->schema([
                 TextInput::make('name')
                     ->required(),
                 Select::make('personality_type')

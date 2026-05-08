@@ -2,23 +2,40 @@
 
 namespace App\Filament\Resources\Products\Schemas;
 
+use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\ToggleButtons;
-use Filament\Schemas\Components\Group;
-use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
+use Filament\Schemas\Components\Utilities\Get;
+use Illuminate\Support\Facades\Auth;
 
 class ProductForm
 {
     public static function configure(Schema $schema): Schema
     {
         return $schema
-            ->components([
+            ->schema([
                 Select::make('store_id')
-                    ->relationship('store', 'name')
-                    ->required(),
+                    ->relationship(
+                        'store',
+                        'name',
+                        fn ($query) => $query
+                            ->when(
+                                !Auth::user()?->is_super_admin,
+                                fn ($q) => $q->where('id', Auth::user()?->store_id)
+                            )
+                    )
+                    ->required()
+                    ->default(Auth::user()?->store_id),
+                TextInput::make('id')
+                    ->label('Product ID (for AI image references)')
+                    ->disabled()
+                    ->dehydrated(false)
+                    ->formatStateUsing(fn ($record) => $record?->id ? "Use [IMG:{$record->id}] to show this product" : '(ID will be assigned after creation)')
+                    ->helperText('Reference this ID in system prompts or AI responses to display product images')
+                    ->columnSpanFull(),
                 TextInput::make('name')
                     ->required(),
                 Textarea::make('description')
@@ -50,20 +67,30 @@ class ProductForm
                             ? 'Enter 1 if accepting new clients, 0 if fully booked'
                             : 'Enter the number of units in stock';
                     }),
-                Group::make([
-                    Textarea::make('ai_sales_strategy')
-                        ->label('AI Sales Strategy')
-                        ->placeholder('How should the AI sell this product? E.g., "Emphasize quality over price" or "Focus on limited availability"...')
-                        ->columnSpanFull(),
-                    Textarea::make('faq_context')
-                        ->label('FAQ & Operational Context')
-                        ->placeholder('Rules, cities served, employees, FAQs specific to this product...')
-                        ->columnSpanFull(),
-                    TextInput::make('required_customer_info')
-                        ->label('Required Lead Data')
-                        ->placeholder('E.g., Full name, phone, delivery address, preferred date...')
-                        ->columnSpanFull(),
-                ])->columnSpanFull(),
+                Textarea::make('ai_sales_strategy')
+                    ->label('AI Sales Strategy')
+                    ->placeholder('How should the AI sell this product? E.g., "Emphasize quality over price" or "Focus on limited availability"...')
+                    ->columnSpanFull(),
+                Textarea::make('faq_context')
+                    ->label('FAQ & Operational Context')
+                    ->placeholder('Rules, cities served, employees, FAQs specific to this product...')
+                    ->columnSpanFull(),
+                TextInput::make('required_customer_info')
+                    ->label('Required Lead Data')
+                    ->placeholder('E.g., Full name, phone, delivery address, preferred date...')
+                    ->columnSpanFull(),
+
+                // === PRODUCT GALLERY ===
+                FileUpload::make('images')
+                    ->label('Product Images')
+                    ->multiple()
+                    ->reorderable()
+                    ->directory('products')
+                    ->disk('public')
+                    ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp'])
+                    ->maxSize(5120) // 5MB max per image
+                    ->helperText('Upload multiple images (JPG, PNG, WebP). The first image will be used as primary.')
+                    ->columnSpanFull(),
             ]);
     }
 }

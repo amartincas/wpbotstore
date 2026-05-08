@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
     'store_id',
@@ -72,5 +73,23 @@ class Product extends Model
     public function store(): BelongsTo
     {
         return $this->belongsTo(Store::class);
+    }
+
+    /**
+     * Get all images for this product.
+     */
+    public function images(): HasMany
+    {
+        return $this->hasMany(ProductImage::class);
+    }
+
+    /**
+     * Get the primary image for this product, or the first available.
+     */
+    public function getPrimaryImage(): ?ProductImage
+    {
+        return $this->images()
+            ->where('is_primary', true)
+            ->first() ?? $this->images()->first();
     }
 }

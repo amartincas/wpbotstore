@@ -31,7 +31,7 @@ class UserResource extends Resource
         return Auth::user()?->is_super_admin ?? false;
     }
 
-    public static function form(Schema $schema): Schema
+    public static function form(\Filament\Schemas\Schema $schema): \Filament\Schemas\Schema
     {
         return UserForm::configure($schema);
     }

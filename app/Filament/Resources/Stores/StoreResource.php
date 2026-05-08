@@ -41,7 +41,7 @@ class StoreResource extends Resource
         return StoresTable::configure($table);
     }
 
-    public static function form(Schema $schema): Schema
+    public static function form(\Filament\Schemas\Schema $schema): \Filament\Schemas\Schema
     {
         return StoreForm::configure($schema);
     }

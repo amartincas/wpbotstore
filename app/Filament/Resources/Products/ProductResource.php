@@ -41,6 +41,11 @@ class ProductResource extends Resource
         return ProductsTable::configure($table);
     }
 
+    public static function form(\Filament\Schemas\Schema $schema): \Filament\Schemas\Schema
+    {
+        return ProductForm::configure($schema);
+    }
+
     public static function getRelations(): array
     {
         return [

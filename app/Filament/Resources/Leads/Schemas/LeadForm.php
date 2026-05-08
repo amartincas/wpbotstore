@@ -13,7 +13,7 @@ class LeadForm
     public static function configure(Schema $schema): Schema
     {
         return $schema
-            ->components([
+            ->schema([
                 TextInput::make('customer_name')
                     ->label('Full Name')
                     ->required()

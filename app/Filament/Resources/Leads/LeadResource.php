@@ -35,7 +35,7 @@ class LeadResource extends Resource
         return $query;
     }
 
-    public static function form(Schema $schema): Schema
+    public static function form(\Filament\Schemas\Schema $schema): \Filament\Schemas\Schema
     {
         return LeadForm::configure($schema);
     }

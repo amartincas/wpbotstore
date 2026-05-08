@@ -100,6 +100,30 @@
             </flux:toast.group>
         @endpersist
 
+        {{-- Confetti Animation Script --}}
+        <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.0/dist/confetti.browser.min.js"></script>
+        <script>
+            document.addEventListener('livewire:navigate', function () {
+                // Listen for confetti trigger event from Livewire
+                Livewire.on('trigger-confetti', function () {
+                    confetti({
+                        particleCount: 100,
+                        spread: 70,
+                        origin: { y: 0.6 }
+                    });
+                });
+            });
+
+            // Also set up listener for current page
+            Livewire.on('trigger-confetti', function () {
+                confetti({
+                    particleCount: 100,
+                    spread: 70,
+                    origin: { y: 0.6 }
+                });
+            });
+        </script>
+
         @fluxScripts
     </body>
 </html>

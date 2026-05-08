@@ -29,6 +29,8 @@ class Store extends Model
             'personality_type' => 'string',
             'ai_provider' => 'string',
             'ai_api_key' => 'encrypted',
+            'wa_access_token' => 'encrypted',
+            'wa_verify_token' => 'encrypted',
         ];
     }
 

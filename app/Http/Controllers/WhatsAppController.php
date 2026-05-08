@@ -26,9 +26,15 @@ class WhatsAppController extends Controller
      */
     public function verify(Request $request, string $store_token)
     {
-        $store = Store::where('wa_verify_token', $store_token)->first();
+        // Find store by decrypted wa_verify_token
+        // Since wa_verify_token is encrypted in DB, we load all stores and compare
+        // (Store table is small, so this is efficient)
+        $store = Store::all()->firstWhere('wa_verify_token', $store_token);
 
         if (!$store) {
+            Log::warning('WhatsApp webhook verification failed: store not found', [
+                'token_length' => strlen($store_token),
+            ]);
             return response('Store Not Found', 404);
         }
 
@@ -57,12 +63,13 @@ class WhatsAppController extends Controller
      */
     public function handle(Request $request, string $store_token): Response
     {
-        // Find store by wa_verify_token
-        $store = Store::where('wa_verify_token', $store_token)->first();
+        // Find store by decrypted wa_verify_token
+        // Since wa_verify_token is encrypted in DB, we load all stores and compare
+        $store = Store::all()->firstWhere('wa_verify_token', $store_token);
 
         if (!$store) {
             Log::warning('WhatsApp message handling failed: store not found', [
-                'store_token' => $store_token,
+                'token_length' => strlen($store_token),
             ]);
             return response('Not Found', 404);
         }

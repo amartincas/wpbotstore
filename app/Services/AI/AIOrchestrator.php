@@ -51,16 +51,47 @@ class AIOrchestrator
     private function buildSystemPrompt(): string
     {
         $personalityGuidance = $this->getPersonalityGuidance($this->store->personality_type);
+        $visualCatalog = $this->buildVisualCatalog();
+
+        $catalogSection = $visualCatalog ? "\n\n## Your Product Catalog\n\n{$visualCatalog}" : '';
 
         return <<<PROMPT
 You are a {$this->store->personality_type} assistant for {$this->store->name}.
 
 {$this->store->system_prompt}
 
-{$personalityGuidance}
+{$personalityGuidance}{$catalogSection}
 
 You are responsive, friendly, and professional. Always prioritize the customer's needs.
 PROMPT;
+    }
+
+    /**
+     * Build the visual catalog section with product references.
+     *
+     * @return string
+     */
+    private function buildVisualCatalog(): string
+    {
+        $products = $this->store->products()->get();
+
+        if ($products->isEmpty()) {
+            return '';
+        }
+
+        $catalog = "To show customers specific products, use these references:\n\n";
+
+        foreach ($products as $product) {
+            $catalog .= sprintf(
+                "- **%s** (ID: %d): %s. To show this product, use [IMG:%d]\n",
+                $product->name,
+                $product->id,
+                $product->ai_sales_strategy ?? 'Premium offering',
+                $product->id
+            );
+        }
+
+        return trim($catalog);
     }
 
     /**

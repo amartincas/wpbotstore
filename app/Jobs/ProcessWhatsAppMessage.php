@@ -197,6 +197,14 @@ class ProcessWhatsAppMessage implements ShouldQueue
                 ]);
             }
 
+            // Process AI response to extract and send images
+            // This also cleans the message by removing [IMG: id] tags
+            $messageToSend = WhatsAppService::processAIResponse(
+                $messageToSend,
+                $this->store,
+                $this->from
+            );
+
             // Save user message to database
             WhatsAppMessage::create([
                 'store_id' => $this->store->id,
