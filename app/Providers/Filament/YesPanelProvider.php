@@ -26,8 +26,8 @@ class YesPanelProvider extends PanelProvider
     {
         return $panel
             ->default()
-            ->id('yes')
-            ->path('yes')
+            ->id('admin')
+            ->path('')
             ->login()
             ->registration(CustomRegister::class)
             ->colors([

@@ -26,8 +26,11 @@ class FortifyServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // Disable Fortify routes - Filament handles all authentication
+        Fortify::ignoreRoutes();
+        
         $this->configureActions();
-        $this->configureViews();
+        // Don't configure views - let Filament handle login
         $this->configureRateLimiting();
     }
 
@@ -42,17 +45,18 @@ class FortifyServiceProvider extends ServiceProvider
 
     /**
      * Configure Fortify views.
+     * Disabled - Filament handles all authentication views
      */
-    private function configureViews(): void
-    {
-        Fortify::loginView(fn () => view('livewire.auth.login'));
-        Fortify::verifyEmailView(fn () => view('livewire.auth.verify-email'));
-        Fortify::twoFactorChallengeView(fn () => view('livewire.auth.two-factor-challenge'));
-        Fortify::confirmPasswordView(fn () => view('livewire.auth.confirm-password'));
-        Fortify::registerView(fn () => view('livewire.auth.register'));
-        Fortify::resetPasswordView(fn () => view('livewire.auth.reset-password'));
-        Fortify::requestPasswordResetLinkView(fn () => view('livewire.auth.forgot-password'));
-    }
+    // private function configureViews(): void
+    // {
+    //     Fortify::loginView(fn () => view('livewire.auth.login'));
+    //     Fortify::verifyEmailView(fn () => view('livewire.auth.verify-email'));
+    //     Fortify::twoFactorChallengeView(fn () => view('livewire.auth.two-factor-challenge'));
+    //     Fortify::confirmPasswordView(fn () => view('livewire.auth.confirm-password'));
+    //     Fortify::registerView(fn () => view('livewire.auth.register'));
+    //     Fortify::resetPasswordView(fn () => view('livewire.auth.reset-password'));
+    //     Fortify::requestPasswordResetLinkView(fn () => view('livewire.auth.forgot-password'));
+    // }
 
     /**
      * Configure rate limiting.
