@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Services\Ai;
+namespace App\Services\AI;
 
 use App\Models\Store;
 use App\Services\Ai\OpenAiService;
