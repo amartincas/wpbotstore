@@ -5,7 +5,7 @@ namespace App\Factories;
 use App\Contracts\AiServiceInterface;
 use App\Models\Store;
 use App\Services\AI\GrokService;
-use App\Services\AI\OpenAiService;
+use App\Services\AI\OpenAIService;
 use Illuminate\Support\Facades\Log;
 
 class AIServiceFactory
@@ -48,7 +48,7 @@ class AIServiceFactory
         $model = self::validateAndGetModel($provider, $model, $store);
 
         return match ($provider) {
-            'openai' => new OpenAiService($apiKey, $model),
+            'openai' => new OpenAIService($apiKey, $model),
             'grok' => new GrokService($apiKey, $model),
             default => throw new \Exception("Unsupported AI provider: {$provider}"),
         };
