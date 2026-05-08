@@ -8,7 +8,7 @@ use App\Services\AI\GrokService;
 use App\Services\AI\OpenAiService;
 use Illuminate\Support\Facades\Log;
 
-class AiServiceFactory
+class AIServiceFactory
 {
     /**
      * Supported models for each AI provider.

@@ -5,7 +5,7 @@ namespace App\Services\AI;
 use App\Contracts\AiServiceInterface;
 use Illuminate\Support\Facades\Http;
 
-class OpenAiService implements AiServiceInterface
+class OpenAIService implements AIServiceInterface
 {
     private string $apiKey;
     private string $model;
