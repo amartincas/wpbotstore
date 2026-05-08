@@ -4,8 +4,8 @@ namespace App\Factories;
 
 use App\Contracts\AiServiceInterface;
 use App\Models\Store;
-use App\Services\Ai\GrokService;
-use App\Services\Ai\OpenAiService;
+use App\Services\AI\GrokService;
+use App\Services\AI\OpenAiService;
 use Illuminate\Support\Facades\Log;
 
 class AiServiceFactory
