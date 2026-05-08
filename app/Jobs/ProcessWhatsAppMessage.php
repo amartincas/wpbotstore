@@ -6,7 +6,7 @@ use App\Models\Store;
 use App\Models\WhatsAppMessage;
 use App\Models\Product;
 use App\Models\Lead;
-use App\Factories\AiServiceFactory;
+use App\Factories\AIServiceFactory;
 use App\Services\WhatsAppService;
 use App\Services\Inventory\ProductFinderService;
 use Illuminate\Bus\Queueable;
