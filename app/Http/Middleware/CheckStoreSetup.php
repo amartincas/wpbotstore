@@ -13,6 +13,11 @@ class CheckStoreSetup
      */
     public function handle(Request $request, Closure $next)
     {
+        // Verification for cronjob
+        if (app()->runningInConsole()) {
+            return $next($request);
+        }
+        
         // Only check for authenticated users accessing Filament
         if (Auth::check() && $request->path() !== 'yes/store-settings') {
             $user = Auth::user();

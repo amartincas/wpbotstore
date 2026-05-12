@@ -441,7 +441,7 @@ class ProcessWhatsAppMessage implements ShouldQueue
             
             // ===== DESCRIPTION =====
             if (!empty($product->description)) {
-                $formatted .= "Description: " . substr($product->description, 0, 150) . "\n";
+                $formatted .= "Description: " . $product->description . "\n";
             }
             
             // ===== DATABASE FIELDS FOR AI SALES & RULES =====
@@ -504,7 +504,7 @@ class ProcessWhatsAppMessage implements ShouldQueue
         
         // ===== DESCRIPTION =====
         if (!empty($product->description)) {
-            $formatted .= "Description: " . substr($product->description, 0, 150) . "\n";
+            $formatted .= "Description: " . $product->description . "\n";
         }
         
         // ===== DATABASE FIELDS FOR AI SALES & RULES =====
