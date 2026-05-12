@@ -90,7 +90,10 @@ class ProductForm
                     ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp'])
                     ->maxSize(5120) // 5MB max per image
                     ->helperText('Upload multiple images (JPG, PNG, WebP). The first image will be used as primary.')
-                    ->columnSpanFull(),
+                    ->columnSpanFull()
+                    // Load existing images from the relationship
+                    ->formatStateUsing(fn ($record) => $record?->images()->pluck('image_path')->toArray() ?? [])
+                    ->dehydrated(false),
             ]);
     }
 }

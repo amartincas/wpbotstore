@@ -46,7 +46,7 @@ class EditProduct extends EditRecord
             ProductImage::create([
                 'product_id' => $this->record->id,
                 'image_path' => $filePath,
-                'is_primary' => $index === 0, // First image is primary
+                'is_primary' => $index === 0 && empty($existingImages), // First image is primary if no existing images
             ]);
         }
 
@@ -61,6 +61,13 @@ class EditProduct extends EditRecord
             foreach ($deletedImages as $imagePath) {
                 Storage::disk('public')->delete($imagePath);
             }
+        }
+        
+        // Reorder images if they were reordered
+        foreach ($uploadedFiles as $index => $filePath) {
+            ProductImage::where('image_path', $filePath)
+                ->where('product_id', $this->record->id)
+                ->update(['sort_order' => $index]);
         }
     }
 }

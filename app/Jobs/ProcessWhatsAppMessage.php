@@ -136,25 +136,50 @@ class ProcessWhatsAppMessage implements ShouldQueue
                 }, $history),
             ]);
 
-            // Build system prompt with store-provided instructions as the primary source
-            $systemPrompt = $this->store->system_prompt;
+            // ===== SYSTEM PROMPT PIPELINE =====
+            // Pure concatenation of database values following: Store Instructions → Product Context → Metadata
             
-            // Append product catalog and rules only if products exist
-            if ($productContext && !empty($productContext['context'])) {
-                $systemPrompt .= "\n\n### PRODUCT CATALOG AND SPECIFIC RULES:\n" . $productContext['context'];
-                $systemPrompt .= "\n\nSYSTEM NOTE: If you collect all required data, end with [LEAD_COMPLETE].";
+            // 1. Load store system prompt (must be set by store admin)
+            $systemPrompt = trim($this->store->system_prompt ?? '');
+            
+            // 2. Validate store prompt exists and log if missing
+            if (empty($systemPrompt)) {
+                Log::warning('PROMPT_VALIDATION: Store system_prompt is empty', [
+                    'store_id' => $this->store->id,
+                    'store_name' => $this->store->name,
+                ]);
+                // Minimal fallback: does not replace user's instructions, just signals empty
+                $systemPrompt = 'You are an assistant.';
             }
+            
+            // 3. Append product context (formatted with headers, no hardcoded rules)
+            if ($productContext && !empty($productContext['context'])) {
+                $systemPrompt .= "\n\n### PRODUCT CATALOG DATA:\n" . $productContext['context'];
+            } else {
+                // Log when no product context available
+                Log::warning('CONTEXT_VALIDATION: No product context retrieved', [
+                    'store_id' => $this->store->id,
+                    'customer_phone' => $this->from,
+                    'message' => substr($this->messageBody, 0, 100),
+                ]);
+            }
+            
+            // 4. Append system metadata (timestamps and completion signal)
+            $systemPrompt .= "\n\n### SYSTEM METADATA:\n";
+            $systemPrompt .= "Current Date/Time: " . now()->format('Y-m-d H:i:s') . "\n";
+            $systemPrompt .= "Lead Completion Signal: [LEAD_COMPLETE]\n";
 
             // Get the configured AI service for this store
             $aiEngine = AIServiceFactory::make($this->store);
 
             // Debug: Log the final prompt being sent to OpenAI
-            Log::info("DEBUG - Final System Prompt enviado a OpenAI:", [
-                'full_prompt' => $systemPrompt,
+            Log::info("PROMPT_PIPELINE: System prompt constructed", [
                 'store_id' => $this->store->id,
                 'store_name' => $this->store->name,
-                'has_product_context' => $productContext !== null,
+                'has_system_prompt' => !empty($this->store->system_prompt),
+                'has_product_context' => $productContext !== null && !empty($productContext['context']),
                 'prompt_length' => strlen($systemPrompt),
+                'full_prompt' => $systemPrompt,
             ]);
 
             // Get AI response with chat history
@@ -387,62 +412,59 @@ class ProcessWhatsAppMessage implements ShouldQueue
 
     /**
      * Format products list for context injection.
-     * Uses database fields only with clear labels for AI understanding.
+     * Pure data pipeline: validates fields exist, formats with headers, concatenates database values only.
+     * NO hardcoded instructions or sales text - all content from database.
      */
     private function formatProductsForContext(Collection $products): string
     {
         if ($products->isEmpty()) {
-            return "No offerings found.";
+            return "No products available.";
         }
 
-        $formatted = "📦 **Available Offerings:**\n\n";
+        $formatted = "Available Offerings:\n\n";
 
         foreach ($products as $product) {
+            // ===== PRODUCT IDENTITY =====
+            $formatted .= "Product: " . ($product->name ?? 'Unknown') . "\n";
+            $formatted .= "Type: " . ($product->type ?? 'unknown') . "\n";
+            
+            // ===== PRICING & AVAILABILITY =====
+            $formatted .= "Price: $" . number_format($product->price ?? 0, 2) . "\n";
+            
             if ($product->type === 'service') {
-                $availability = $product->stock === 1
-                    ? '✅ Currently Accepting New Clients'
-                    : '❌ Fully Booked';
-
-                $formatted .= sprintf(
-                    "🔧 **%s** (Service)\n💰 Price: $%s\n📝 %s\n%s\n",
-                    $product->name,
-                    number_format($product->price, 2),
-                    substr($product->description ?? 'No description', 0, 80),
-                    $availability
-                );
+                $availability = ($product->stock ?? 0) === 1 ? 'Available' : 'Unavailable';
+                $formatted .= "Availability: " . $availability . "\n";
             } else {
-                $stockStatus = match (true) {
-                    $product->stock <= 0 => '❌ Out of Stock',
-                    $product->stock < 5 => '⚠️ Low Stock',
-                    default => '✅ In Stock'
-                };
-
-                $formatted .= sprintf(
-                    "📦 **%s** (Product)\n💰 Price: $%s\n📝 %s\n%s (Stock: %d units)\n",
-                    $product->name,
-                    number_format($product->price, 2),
-                    substr($product->description ?? 'No description', 0, 80),
-                    $stockStatus,
-                    $product->stock
-                );
+                $stock = $product->stock ?? 0;
+                $formatted .= "Stock: " . $stock . " units\n";
             }
-
-            // Add AI Sales Strategy with clear label
+            
+            // ===== DESCRIPTION =====
+            if (!empty($product->description)) {
+                $formatted .= "Description: " . substr($product->description, 0, 150) . "\n";
+            }
+            
+            // ===== DATABASE FIELDS FOR AI SALES & RULES =====
+            // These are populated by store admin in database - passed through without modification
+            
             if (!empty($product->ai_sales_strategy)) {
-                $formatted .= "SELLING STRATEGY: {$product->ai_sales_strategy}\n";
+                $formatted .= "Sales Strategy: " . $product->ai_sales_strategy . "\n";
             }
-
-            // Add FAQ/Operational Context with clear label
+            
             if (!empty($product->faq_context)) {
-                $formatted .= "ADDITIONAL RULES & FAQ: {$product->faq_context}\n";
+                $formatted .= "Rules & FAQ: " . $product->faq_context . "\n";
             }
-
-            // Add Required Customer Info with clear label
+            
             if (!empty($product->required_customer_info)) {
-                $formatted .= "MANDATORY DATA TO COLLECT: {$product->required_customer_info}\n";
+                $formatted .= "Required Data: " . $product->required_customer_info . "\n";
+            } else {
+                Log::debug('FIELD_VALIDATION: Product missing required_customer_info', [
+                    'product_id' => $product->id,
+                    'product_name' => $product->name,
+                ]);
             }
-
-            $formatted .= "\n";
+            
+            $formatted .= "\n---\n\n";
         }
 
         return $formatted;
@@ -461,55 +483,50 @@ class ProcessWhatsAppMessage implements ShouldQueue
 
     /**
      * Format a single product's data for context.
-     * Uses database fields only with clear labels for AI understanding.
+     * Pure data pipeline: validates fields, formats with headers, no hardcoded sales text.
      */
     private function formatProductData(Product $product): string
     {
+        // ===== PRODUCT IDENTITY =====
+        $formatted = "Product: " . ($product->name ?? 'Unknown') . "\n";
+        $formatted .= "Type: " . ($product->type ?? 'unknown') . "\n";
+        
+        // ===== PRICING & AVAILABILITY =====
+        $formatted .= "Price: $" . number_format($product->price ?? 0, 2) . "\n";
+        
         if ($product->type === 'service') {
-            $availability = $product->stock === 1
-                ? '✅ Currently Accepting New Clients'
-                : '❌ Fully Booked - Not Accepting New Clients';
-
-            $formatted = sprintf(
-                "🔧 **%s** (Service)\n💰 Price: $%s\n📝 %s\n%s",
-                $product->name,
-                number_format($product->price, 2),
-                substr($product->description ?? 'No description available', 0, 80),
-                $availability
-            );
+            $availability = ($product->stock ?? 0) === 1 ? 'Available' : 'Unavailable';
+            $formatted .= "Availability: " . $availability . "\n";
         } else {
-            // Product logic
-            $stockStatus = match (true) {
-                $product->stock <= 0 => '❌ Out of Stock',
-                $product->stock < 5 => '⚠️ Low Stock',
-                default => '✅ In Stock'
-            };
-
-            $formatted = sprintf(
-                "📦 **%s** (Product)\n💰 Price: $%s\n📝 %s\n%s (Stock: %d units)",
-                $product->name,
-                number_format($product->price, 2),
-                substr($product->description ?? 'No description available', 0, 80),
-                $stockStatus,
-                $product->stock
-            );
+            $stock = $product->stock ?? 0;
+            $formatted .= "Stock: " . $stock . " units\n";
         }
-
-        // Add AI Sales Strategy with clear label
+        
+        // ===== DESCRIPTION =====
+        if (!empty($product->description)) {
+            $formatted .= "Description: " . substr($product->description, 0, 150) . "\n";
+        }
+        
+        // ===== DATABASE FIELDS FOR AI SALES & RULES =====
+        // Store admin manages these in database - passed through without modification
+        
         if (!empty($product->ai_sales_strategy)) {
-            $formatted .= "\nSELLING STRATEGY: {$product->ai_sales_strategy}";
+            $formatted .= "Sales Strategy: " . $product->ai_sales_strategy . "\n";
         }
-
-        // Add FAQ/Operational Context with clear label
+        
         if (!empty($product->faq_context)) {
-            $formatted .= "\nADDITIONAL RULES & FAQ: {$product->faq_context}";
+            $formatted .= "Rules & FAQ: " . $product->faq_context . "\n";
         }
-
-        // Add Required Customer Info with clear label
+        
         if (!empty($product->required_customer_info)) {
-            $formatted .= "\nMANDATORY DATA TO COLLECT: {$product->required_customer_info}";
+            $formatted .= "Required Data: " . $product->required_customer_info . "\n";
+        } else {
+            Log::debug('FIELD_VALIDATION: Product missing required_customer_info', [
+                'product_id' => $product->id,
+                'product_name' => $product->name,
+            ]);
         }
-
+        
         return $formatted;
     }
 
