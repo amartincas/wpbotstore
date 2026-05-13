@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
 use Livewire\Livewire;
+use App\Services\AI\GeminiService;
 
 class AppServiceProvider extends ServiceProvider
 {

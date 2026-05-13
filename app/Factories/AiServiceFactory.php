@@ -17,7 +17,7 @@ class AIServiceFactory
     private const SUPPORTED_MODELS = [
         'openai' => ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-4', 'gpt-3.5-turbo'],
         'grok' => ['grok-beta', 'grok-2', 'grok-3'],
-        'gemini' => ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-pro'],
+        'gemini' => ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-3-flash-preview'],
     ];
 
     /**
@@ -26,7 +26,7 @@ class AIServiceFactory
     private const DEFAULT_MODELS = [
         'openai' => 'gpt-4o-mini',
         'grok' => 'grok-beta',
-        'gemini' => 'gemini-1.5-flash',
+        'gemini' => 'gemini-2.5-flash',
     ];
 
     /**

@@ -4,6 +4,7 @@ namespace App\Services\AI;
 
 use App\Contracts\AiServiceInterface;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class GeminiService implements AiServiceInterface
 {
@@ -62,7 +63,7 @@ class GeminiService implements AiServiceInterface
             ->timeout(30)  
             ->connectTimeout(10)
             ->post(
-                "https://generativelanguage.googleapis.com/v1beta/models/{$this->model}:generateContent",
+                "https://generativelanguage.googleapis.com/v1/models/{$this->model}:generateContent",
                 $payload
             );
 
@@ -84,7 +85,6 @@ class GeminiService implements AiServiceInterface
         if (!$this->apiKey) return false;
 
         try {
-            // También aplicamos timeout al test para que no bloquee el hilo
             $response = Http::withHeaders(['x-goog-api-key' => $this->apiKey])
                 ->timeout(10)
                 ->post(
@@ -99,5 +99,35 @@ class GeminiService implements AiServiceInterface
         } catch (\Exception $e) {
             return false;
         }
-    }
+    } 
+    /*
+    public function testConnection()
+    {
+        // URL limpia sin el ?key= al final
+        $url = "https://generativelanguage.googleapis.com/v1beta/models/{$this->model}:generateContent";
+
+        try {
+            $response = Http::withHeaders([
+                'Content-Type' => 'application/json',
+                'x-goog-api-key' => $this->apiKey, // La llave va aquí
+            ])->post($url, [
+                'contents' => [
+                    ['parts' => [['text' => 'hi']]]
+                ]
+            ]);
+
+            if ($response->successful()) {
+                return "¡CONEXIÓN EXITOSA!";
+            }
+
+            return [
+                'status' => $response->status(),
+                'error' => $response->json()['error']['message'] ?? 'Error desconocido',
+                'sugerencia' => 'Prueba cambiando el modelo a gemini-1.5-flash-001'
+            ];
+
+        } catch (\Exception $e) {
+            return "Excepción: " . $e->getMessage();
+        }
+    } */
 }

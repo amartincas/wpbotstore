@@ -22,6 +22,7 @@ class AIServiceFactory
         return match ($store->ai_provider) {
             'openai' => new OpenAiService($store->ai_api_key, $store->ai_model),
             'grok' => new GrokService($store->ai_api_key, $store->ai_model),
+            'gemini' => new GeminiService($store->ai_api_key, $store->ai_model),
             default => throw new Exception("Unsupported AI provider: {$store->ai_provider}"),
         };
     }
@@ -40,6 +41,7 @@ class AIServiceFactory
         return match ($provider) {
             'openai' => new OpenAiService($apiKey, $model),
             'grok' => new GrokService($apiKey, $model),
+            'gemini' => new GeminiService($apiKey, $model),
             default => throw new Exception("Unsupported AI provider: {$provider}"),
         };
     }
@@ -51,7 +53,7 @@ class AIServiceFactory
      */
     public static function supportedProviders(): array
     {
-        return ['openai', 'grok'];
+        return ['openai', 'grok', 'gemini'];
     }
 
     /**
