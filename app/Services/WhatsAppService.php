@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Store;
+use App\Models\ProductImage;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -239,60 +240,53 @@ class WhatsAppService
             ]);
 
             if (!empty($matches[1])) {
-                foreach ($matches[1] as $productId) {
+                foreach ($matches[1] as $imageId) {
                     Log::info('Processing image tag', [
                         'store_id' => $store->id,
-                        'product_id' => $productId,
+                        'image_id' => $imageId,
                         'customer_number' => $customerNumber,
                     ]);
 
-                    $product = $store->products()
-                        ->where('id', $productId)
-                        ->first();
+                    $image = ProductImage::find($imageId);
 
-                    if ($product) {
-                        Log::info('Product found', [
+                    if ($image) {
+                        Log::info('ProductImage found', [
                             'store_id' => $store->id,
-                            'product_id' => $productId,
-                            'product_name' => $product->name,
+                            'image_id' => $imageId,
+                            'image_path' => $image->image_path,
+                            'public_url' => $image->public_url,
+                            'product_id' => $image->product_id,
                         ]);
 
-                        $image = $product->getPrimaryImage();
-                        if ($image) {
-                            Log::info('Image found, sending', [
-                                'store_id' => $store->id,
-                                'product_id' => $productId,
-                                'image_path' => $image->image_path,
-                                'public_url' => $image->public_url,
-                                'customer_number' => $customerNumber,
-                            ]);
+                        // Get product name for caption
+                        $productName = $image->product ? $image->product->name : 'Product Image';
 
-                            // Send the image
-                            $imageSent = self::sendWhatsAppImage(
-                                $customerNumber,
-                                $image->public_url,
-                                $store,
-                                $product->name
-                            );
-
-                            Log::info('Image send result', [
-                                'store_id' => $store->id,
-                                'product_id' => $productId,
-                                'image_sent' => $imageSent,
-                                'customer_number' => $customerNumber,
-                            ]);
-                        } else {
-                            Log::warning('Product image not found for AI response', [
-                                'store_id' => $store->id,
-                                'product_id' => $productId,
-                                'product_name' => $product->name,
-                                'total_images' => $product->images()->count(),
-                            ]);
-                        }
-                    } else {
-                        Log::warning('Product not found for AI response', [
+                        Log::info('Sending image', [
                             'store_id' => $store->id,
-                            'product_id' => $productId,
+                            'image_id' => $imageId,
+                            'public_url' => $image->public_url,
+                            'customer_number' => $customerNumber,
+                            'product_name' => $productName,
+                        ]);
+
+                        // Send the image
+                        $imageSent = self::sendWhatsAppImage(
+                            $customerNumber,
+                            $image->public_url,
+                            $store,
+                            $productName
+                        );
+
+                        Log::info('Image send result', [
+                            'store_id' => $store->id,
+                            'image_id' => $imageId,
+                            'image_sent' => $imageSent,
+                            'customer_number' => $customerNumber,
+                        ]);
+                    } else {
+                        Log::warning('ProductImage not found for AI response', [
+                            'store_id' => $store->id,
+                            'image_id' => $imageId,
                         ]);
                     }
                 }
