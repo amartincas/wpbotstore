@@ -62,12 +62,5 @@ class EditProduct extends EditRecord
                 Storage::disk('public')->delete($imagePath);
             }
         }
-        
-        // Reorder images if they were reordered
-        foreach ($uploadedFiles as $index => $filePath) {
-            ProductImage::where('image_path', $filePath)
-                ->where('product_id', $this->record->id)
-                ->update(['sort_order' => $index]);
-        }
     }
 }

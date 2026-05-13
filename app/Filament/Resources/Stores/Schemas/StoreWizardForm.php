@@ -87,6 +87,7 @@ class StoreWizardForm
                     ->options([
                         'openai' => 'ChatGPT (OpenAI)',
                         'grok' => 'Grok',
+                        'gemini' => 'Gemini',
                     ])
                     ->default('openai')
                     ->required()

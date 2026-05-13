@@ -4,6 +4,7 @@ namespace App\Factories;
 
 use App\Contracts\AiServiceInterface;
 use App\Models\Store;
+use App\Services\AI\GeminiService;
 use App\Services\AI\GrokService;
 use App\Services\AI\OpenAIService;
 use Illuminate\Support\Facades\Log;
@@ -16,6 +17,7 @@ class AIServiceFactory
     private const SUPPORTED_MODELS = [
         'openai' => ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-4', 'gpt-3.5-turbo'],
         'grok' => ['grok-beta', 'grok-2', 'grok-3'],
+        'gemini' => ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-pro'],
     ];
 
     /**
@@ -24,6 +26,7 @@ class AIServiceFactory
     private const DEFAULT_MODELS = [
         'openai' => 'gpt-4o-mini',
         'grok' => 'grok-beta',
+        'gemini' => 'gemini-1.5-flash',
     ];
 
     /**
@@ -50,6 +53,7 @@ class AIServiceFactory
         return match ($provider) {
             'openai' => new OpenAIService($apiKey, $model),
             'grok' => new GrokService($apiKey, $model),
+            'gemini' => new GeminiService($apiKey, $model),
             default => throw new \Exception("Unsupported AI provider: {$provider}"),
         };
     }

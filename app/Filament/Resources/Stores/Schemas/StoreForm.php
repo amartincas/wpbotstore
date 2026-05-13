@@ -23,9 +23,9 @@ class StoreForm
                     ->required()
                     ->columnSpanFull(),
                 Select::make('ai_provider')
-                    ->options(['openai' => 'Openai', 'grok' => 'Grok'])
+                    ->options(['openai' => 'Openai', 'grok' => 'Grok', 'gemini' => 'Gemini'])
                     ->required()
-                    ->rule('in:openai,grok')
+                    ->rule('in:openai,grok,gemini')
                     ->reactive(),
                 Select::make('ai_model')
                     ->label('AI Model')
