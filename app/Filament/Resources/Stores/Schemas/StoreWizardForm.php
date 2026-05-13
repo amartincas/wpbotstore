@@ -26,14 +26,13 @@ class StoreWizardForm
                 // === WEBHOOK CONFIGURATION ===
                 TextInput::make('wa_verify_token')
                     ->label('Verify Token')
-                    ->disabled()
                     ->helperText('This is your webhook verify token. Use this in Meta Developers Console > Webhook Settings.')
                     ->reactive()
                     ->columnSpanFull(),
 
                 TextInput::make('webhook_url')
                     ->label('Webhook URL')
-                    ->disabled()
+                    //->disabled()
                     ->dehydrated(false)
                     ->formatStateUsing(function ($state, $record) {
                         if (!$record) {

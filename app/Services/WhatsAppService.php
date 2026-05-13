@@ -231,27 +231,76 @@ class WhatsAppService
             $pattern = '/\[IMG:\s*(\d+)\s*\]/i';
             preg_match_all($pattern, $responseText, $matches);
 
+            Log::info('AI Response Image Processing', [
+                'store_id' => $store->id,
+                'customer_number' => $customerNumber,
+                'response_text' => $responseText,
+                'found_img_tags' => $matches[1] ?? [],
+            ]);
+
             if (!empty($matches[1])) {
                 foreach ($matches[1] as $productId) {
+                    Log::info('Processing image tag', [
+                        'store_id' => $store->id,
+                        'product_id' => $productId,
+                        'customer_number' => $customerNumber,
+                    ]);
+
                     $product = $store->products()
                         ->where('id', $productId)
                         ->first();
 
-                    if ($product && ($image = $product->getPrimaryImage())) {
-                        // Send the image
-                        self::sendWhatsAppImage(
-                            $customerNumber,
-                            $image->public_url,
-                            $store,
-                            $product->name
-                        );
+                    if ($product) {
+                        Log::info('Product found', [
+                            'store_id' => $store->id,
+                            'product_id' => $productId,
+                            'product_name' => $product->name,
+                        ]);
+
+                        $image = $product->getPrimaryImage();
+                        if ($image) {
+                            Log::info('Image found, sending', [
+                                'store_id' => $store->id,
+                                'product_id' => $productId,
+                                'image_path' => $image->image_path,
+                                'public_url' => $image->public_url,
+                                'customer_number' => $customerNumber,
+                            ]);
+
+                            // Send the image
+                            $imageSent = self::sendWhatsAppImage(
+                                $customerNumber,
+                                $image->public_url,
+                                $store,
+                                $product->name
+                            );
+
+                            Log::info('Image send result', [
+                                'store_id' => $store->id,
+                                'product_id' => $productId,
+                                'image_sent' => $imageSent,
+                                'customer_number' => $customerNumber,
+                            ]);
+                        } else {
+                            Log::warning('Product image not found for AI response', [
+                                'store_id' => $store->id,
+                                'product_id' => $productId,
+                                'product_name' => $product->name,
+                                'total_images' => $product->images()->count(),
+                            ]);
+                        }
                     } else {
-                        Log::warning('Product image not found for AI response', [
+                        Log::warning('Product not found for AI response', [
                             'store_id' => $store->id,
                             'product_id' => $productId,
                         ]);
                     }
                 }
+            } else {
+                Log::info('No image tags found in AI response', [
+                    'store_id' => $store->id,
+                    'customer_number' => $customerNumber,
+                ]);
             }
 
             // Remove all [IMG: ...] tags from response
@@ -260,12 +309,20 @@ class WhatsAppService
             // Clean up extra whitespace
             $cleanText = trim(preg_replace('/\s+/', ' ', $cleanText));
 
+            Log::info('AI Response processing completed', [
+                'store_id' => $store->id,
+                'customer_number' => $customerNumber,
+                'original_length' => strlen($responseText),
+                'cleaned_length' => strlen($cleanText),
+            ]);
+
             return $cleanText;
         } catch (\Exception $e) {
             Log::error('Error processing AI response images', [
                 'store_id' => $store->id,
                 'customer_number' => $customerNumber,
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ]);
 
             // Return original text if processing fails
