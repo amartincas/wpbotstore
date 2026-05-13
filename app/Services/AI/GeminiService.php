@@ -63,7 +63,7 @@ class GeminiService implements AiServiceInterface
             ->timeout(30)  
             ->connectTimeout(10)
             ->post(
-                "https://generativelanguage.googleapis.com/v1/models/{$this->model}:generateContent",
+                "https://generativelanguage.googleapis.com/v1beta/models/{$this->model}:generateContent",
                 $payload
             );
 
@@ -100,34 +100,4 @@ class GeminiService implements AiServiceInterface
             return false;
         }
     } 
-    /*
-    public function testConnection()
-    {
-        // URL limpia sin el ?key= al final
-        $url = "https://generativelanguage.googleapis.com/v1beta/models/{$this->model}:generateContent";
-
-        try {
-            $response = Http::withHeaders([
-                'Content-Type' => 'application/json',
-                'x-goog-api-key' => $this->apiKey, // La llave va aquí
-            ])->post($url, [
-                'contents' => [
-                    ['parts' => [['text' => 'hi']]]
-                ]
-            ]);
-
-            if ($response->successful()) {
-                return "¡CONEXIÓN EXITOSA!";
-            }
-
-            return [
-                'status' => $response->status(),
-                'error' => $response->json()['error']['message'] ?? 'Error desconocido',
-                'sugerencia' => 'Prueba cambiando el modelo a gemini-1.5-flash-001'
-            ];
-
-        } catch (\Exception $e) {
-            return "Excepción: " . $e->getMessage();
-        }
-    } */
 }
