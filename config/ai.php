@@ -9,7 +9,7 @@ return [
     'models' => [
         'openai' => array_filter(array_map('trim', explode(',', env('AI_MODELS_OPENAI', 'gpt-4o,gpt-4o-mini')))),
         'grok' => array_filter(array_map('trim', explode(',', env('AI_MODELS_GROK', 'grok-beta')))),
-        'gemini' => array_filter(array_map('trim', explode(',', env('AI_MODELS_GEMINI', 'gemini-1.5-flash,gemini-1.5-pro,gemini-2.0-pro')))),   
+        'gemini' => array_filter(array_map('trim', explode(',', env('AI_MODELS_GEMINI', 'gemini-2.5-flash,gemini-2.5-pro,gemini-3-flash-preview')))),   
     ],
 
     /**
@@ -27,8 +27,8 @@ return [
             array_filter(array_map('trim', explode(',', env('AI_MODELS_GROK', 'grok-beta'))))
         ) ?: [],
         'gemini' => array_combine(
-            array_filter(array_map('trim', explode(',', env('AI_MODELS_GEMINI', 'gemini-1.5-flash,gemini-1.5-pro,gemini-2.0-pro')))),
-            array_filter(array_map('trim', explode(',', env('AI_MODELS_GEMINI', 'gemini-1.5-flash,gemini-1.5-pro,gemini-2.0-pro'))))
+            array_filter(array_map('trim', explode(',', env('AI_MODELS_GEMINI', 'gemini-2.5-flash,gemini-2.5-pro,gemini-3-flash-preview')))),
+            array_filter(array_map('trim', explode(',', env('AI_MODELS_GEMINI', 'gemini-2.5-flash,gemini-2.5-pro,gemini-3-flash-preview'))))
         ) ?: [],
     ],
 ];
