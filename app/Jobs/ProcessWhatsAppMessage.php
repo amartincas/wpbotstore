@@ -319,7 +319,7 @@ class ProcessWhatsAppMessage implements ShouldQueue
 
             // If a specific product context was provided, fetch that product
             if ($this->productContext) {
-                $product = Product::find($this->productContext);
+                $product = Product::with('images')->find($this->productContext);
                 if ($product) {
                     Log::info("CONTEXT_RETRIEVAL: Found product by ID", [
                         'product_id' => $this->productContext,
@@ -343,6 +343,9 @@ class ProcessWhatsAppMessage implements ShouldQueue
             $finder = new ProductFinderService();
             $result = $finder->findProductsWithTypes($this->messageBody, $this->store->id, 10);
 
+            // Ensure images are loaded for the found products
+            $result['products']->load('images');
+
             Log::info("CONTEXT_RETRIEVAL: Search result", [
                 'products_count' => $result['products']->count(),
                 'has_services' => $result['hasServices'],
@@ -360,6 +363,7 @@ class ProcessWhatsAppMessage implements ShouldQueue
                 // Force fetch all products for this store (ProductFinderService already handles this fallback)
                 // But let's add an explicit secondary fallback
                 $allProducts = Product::where('store_id', $this->store->id)
+                    ->with('images')
                     ->limit(10)
                     ->get(['id', 'name', 'price', 'description', 'stock', 'type']);
 
@@ -444,6 +448,18 @@ class ProcessWhatsAppMessage implements ShouldQueue
                 $formatted .= "Description: " . $product->description . "\n";
             }
             
+            // ===== IMAGES =====
+            if ($product->images && $product->images->count() > 0) {
+                $formatted .= "Images:\n";
+                // Sort images: primary first, then by ID
+                $sortedImages = $product->images->sortByDesc('is_primary')->sortBy('id');
+                foreach ($sortedImages as $image) {
+                    $formatted .= "- [IMG:{$image->id}] Product image\n";
+                }
+            } else {
+                $formatted .= "Images: None\n";
+            }
+            
             // ===== DATABASE FIELDS FOR AI SALES & RULES =====
             // These are populated by store admin in database - passed through without modification
             
@@ -505,6 +521,18 @@ class ProcessWhatsAppMessage implements ShouldQueue
         // ===== DESCRIPTION =====
         if (!empty($product->description)) {
             $formatted .= "Description: " . $product->description . "\n";
+        }
+        
+        // ===== IMAGES =====
+        if ($product->images && $product->images->count() > 0) {
+            $formatted .= "Images:\n";
+            // Sort images: primary first, then by ID
+            $sortedImages = $product->images->sortByDesc('is_primary')->sortBy('id');
+            foreach ($sortedImages as $image) {
+                $formatted .= "- [IMG:{$image->id}] Product image\n";
+            }
+        } else {
+            $formatted .= "Images: None\n";
         }
         
         // ===== DATABASE FIELDS FOR AI SALES & RULES =====

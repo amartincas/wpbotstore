@@ -52,6 +52,7 @@ class ProductFinderService
             ]);
 
             $products = Product::where('store_id', $storeId)
+                ->with('images')
                 ->limit($limit)
                 ->get(['id', 'name', 'price', 'description', 'stock', 'type']);
         } else {
@@ -79,6 +80,7 @@ class ProductFinderService
                     $builder->where('name', 'LIKE', $searchTerm)
                         ->orWhere('description', 'LIKE', $searchTerm);
                 })
+                ->with('images')
                 ->limit($limit)
                 ->get(['id', 'name', 'price', 'description', 'stock', 'type']);
 
@@ -96,6 +98,7 @@ class ProductFinderService
                 ]);
 
                 $products = Product::where('store_id', $storeId)
+                    ->with('images')
                     ->limit($limit)
                     ->get(['id', 'name', 'price', 'description', 'stock', 'type']);
 
@@ -180,7 +183,7 @@ class ProductFinderService
             if ($product->type === 'service') {
                 $availability = $this->getServiceAvailability($product->stock);
                 $formatted .= sprintf(
-                    "🔧 **%s** (Service) - $%.2f\n  📝 %s\n  %s\n\n",
+                    "🔧 **%s** (Service) - $%.2f\n  📝 %s\n  %s\n",
                     $product->name,
                     $product->price,
                     $this->truncateDescription($product->description),
@@ -189,13 +192,27 @@ class ProductFinderService
             } else {
                 $stockStatus = $this->getStockStatus($product->stock);
                 $formatted .= sprintf(
-                    "📦 **%s** (Product) - $%.2f\n  📝 %s\n  %s\n\n",
+                    "📦 **%s** (Product) - $%.2f\n  📝 %s\n  %s\n",
                     $product->name,
                     $product->price,
                     $this->truncateDescription($product->description),
                     $stockStatus
                 );
             }
+
+            // Add images if available
+            if ($product->images && $product->images->count() > 0) {
+                $formatted .= "  🖼️ Images:\n";
+                // Sort images: primary first, then by ID
+                $sortedImages = $product->images->sortByDesc('is_primary')->sortBy('id');
+                foreach ($sortedImages as $image) {
+                    $formatted .= "    - [IMG:{$image->id}] Product image\n";
+                }
+            } else {
+                $formatted .= "  🖼️ Images: None\n";
+            }
+
+            $formatted .= "\n";
         }
 
         return $formatted;
