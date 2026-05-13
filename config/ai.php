@@ -13,17 +13,22 @@ return [
     ],
 
     /**
-     * Get all available models for a specific provider
+     * Provider options for Select dropdowns
+     *
+     * This avoids storing closures in config, which breaks config:caching.
      */
-    'getModels' => function (string $provider) {
-        return config("ai.models.{$provider}", []);
-    },
-
-    /**
-     * Get all providers with their models as options for Select dropdowns
-     */
-    'getProviderOptions' => function (string $provider) {
-        $models = config("ai.models.{$provider}", []);
-        return array_combine($models, $models);
-    },
+    'provider_options' => [
+        'openai' => array_combine(
+            array_filter(array_map('trim', explode(',', env('AI_MODELS_OPENAI', 'gpt-4o,gpt-4o-mini')))),
+            array_filter(array_map('trim', explode(',', env('AI_MODELS_OPENAI', 'gpt-4o,gpt-4o-mini'))))
+        ) ?: [],
+        'grok' => array_combine(
+            array_filter(array_map('trim', explode(',', env('AI_MODELS_GROK', 'grok-beta')))),
+            array_filter(array_map('trim', explode(',', env('AI_MODELS_GROK', 'grok-beta'))))
+        ) ?: [],
+        'gemini' => array_combine(
+            array_filter(array_map('trim', explode(',', env('AI_MODELS_GEMINI', 'gemini-1.5-flash,gemini-1.5-pro,gemini-2.0-pro')))),
+            array_filter(array_map('trim', explode(',', env('AI_MODELS_GEMINI', 'gemini-1.5-flash,gemini-1.5-pro,gemini-2.0-pro'))))
+        ) ?: [],
+    ],
 ];
