@@ -54,7 +54,7 @@ class ProductFinderService
             $products = Product::where('store_id', $storeId)
                 ->with('images')
                 ->limit($limit)
-                ->get(['id', 'name', 'price', 'description', 'stock', 'type']);
+                ->get(['id', 'name', 'price', 'description', 'stock', 'type', 'ai_sales_strategy', 'faq_context', 'required_customer_info']);
         } else {
             // Specific search query - use LIKE with wildcards
             $searchTerm = "%{$query}%";
@@ -82,7 +82,7 @@ class ProductFinderService
                 })
                 ->with('images')
                 ->limit($limit)
-                ->get(['id', 'name', 'price', 'description', 'stock', 'type']);
+                ->get(['id', 'name', 'price', 'description', 'stock', 'type', 'ai_sales_strategy', 'faq_context', 'required_customer_info']);
 
             Log::info("PRODUCT_FINDER: Search result count", [
                 'store_id' => $storeId,
@@ -100,7 +100,7 @@ class ProductFinderService
                 $products = Product::where('store_id', $storeId)
                     ->with('images')
                     ->limit($limit)
-                    ->get(['id', 'name', 'price', 'description', 'stock', 'type']);
+                    ->get(['id', 'name', 'price', 'description', 'stock', 'type', 'ai_sales_strategy', 'faq_context', 'required_customer_info']);
 
                 Log::info("PRODUCT_FINDER: Fallback catalog result", [
                     'store_id' => $storeId,
@@ -210,6 +210,19 @@ class ProductFinderService
                 }
             } else {
                 $formatted .= "  🖼️ Images: None\n";
+            }
+
+            // Add database fields for AI sales & rules
+            if (!empty($product->ai_sales_strategy)) {
+                $formatted .= "  💼 Sales Strategy: " . $product->ai_sales_strategy . "\n";
+            }
+
+            if (!empty($product->faq_context)) {
+                $formatted .= "  ❓ Rules & FAQ: " . $product->faq_context . "\n";
+            }
+
+            if (!empty($product->required_customer_info)) {
+                $formatted .= "  📋 Required Data: " . $product->required_customer_info . "\n";
             }
 
             $formatted .= "\n";

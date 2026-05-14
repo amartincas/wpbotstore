@@ -365,7 +365,7 @@ class ProcessWhatsAppMessage implements ShouldQueue
                 $allProducts = Product::where('store_id', $this->store->id)
                     ->with('images')
                     ->limit(10)
-                    ->get(['id', 'name', 'price', 'description', 'stock', 'type']);
+                    ->get(['id', 'name', 'price', 'description', 'stock', 'type', 'ai_sales_strategy', 'faq_context', 'required_customer_info']);
 
                 Log::info("CONTEXT_RETRIEVAL: Explicit full catalog fetch", [
                     'store_id' => $this->store->id,
