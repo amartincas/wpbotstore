@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Store;
 use App\Models\Conversation;
 use App\Jobs\ProcessWhatsAppMessage;
+use App\Services\WhatsAppService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Log;
@@ -105,8 +106,30 @@ class WhatsAppController extends Controller
 
         $message = $messages[0];
         
-        // Extract sender phone and message body
+        // Detect voice/audio messages and reply with a manual-text fallback
+        $type = $message['type'] ?? null;
         $fromPhone = $message['from'] ?? null;
+
+        if ($type === 'audio' || $type === 'voice') {
+            Log::warning("Audio recibido de {$fromPhone}. Cliente esperando respuesta manual o re-escritura.", [
+                'store_id' => $store->id,
+                'customer_phone' => $fromPhone,
+                'message_id' => $message['id'] ?? null,
+                'message_type' => $type,
+            ]);
+
+            if ($fromPhone) {
+                WhatsAppService::sendMessage(
+                    $fromPhone,
+                    'Sofía aún está aprendiendo a escuchar. Por favor, escríbeme tu mensaje para poder ayudarte de inmediato. ✨',
+                    $store
+                );
+            }
+
+            return response('OK', 200);
+        }
+
+        // Extract sender phone and message body
         $body = $message['text']['body'] ?? null;
 
         if (!$fromPhone || !$body) {
@@ -114,6 +137,7 @@ class WhatsAppController extends Controller
                 'store_id' => $store->id,
                 'has_from' => isset($message['from']),
                 'has_body' => isset($message['text']['body']),
+                'message_type' => $type,
             ]);
             return response('OK', 200);
         }
