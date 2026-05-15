@@ -70,6 +70,42 @@ class OpenAIService implements AIServiceInterface
     }
 
     /**
+     * Transcribe an audio file using OpenAI Whisper.
+     *
+     * @param string $filePath Local path to the audio file
+     * @return string Transcribed text
+     */
+    public function transcribeAudio(string $filePath): string
+    {
+        try {
+            $fileResource = fopen($filePath, 'r');
+            if (!$fileResource) {
+                throw new \Exception('Unable to open audio file for transcription');
+            }
+
+            $response = Http::withToken($this->apiKey)
+                ->attach('file', $fileResource, basename($filePath))
+                ->asMultipart()
+                ->post('https://api.openai.com/v1/audio/transcriptions', [
+                    'model' => 'whisper-1',
+                ]);
+
+            if (is_resource($fileResource)) {
+                fclose($fileResource);
+            }
+
+            if ($response->failed()) {
+                throw new \Exception('OpenAI transcription error: ' . $response->body());
+            }
+
+            $data = $response->json();
+            return trim($data['text'] ?? '');
+        } catch (\Exception $e) {
+            throw new \Exception('OpenAI transcription failed: ' . $e->getMessage());
+        }
+    }
+
+    /**
      * Test OpenAI API connectivity.
      *
      * @return bool

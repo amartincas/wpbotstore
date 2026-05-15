@@ -105,39 +105,33 @@ class WhatsAppController extends Controller
         }
 
         $message = $messages[0];
-        
-        // Detect voice/audio messages and reply with a manual-text fallback
         $type = $message['type'] ?? null;
         $fromPhone = $message['from'] ?? null;
+        $phoneId = $message['id'] ?? null;
 
-        if ($type === 'audio' || $type === 'voice') {
-            Log::warning("Audio recibido de {$fromPhone}. Cliente esperando respuesta manual o re-escritura.", [
+        $body = null;
+        $mediaId = null;
+
+        if ($type === 'text') {
+            $body = $message['text']['body'] ?? null;
+        } elseif (in_array($type, ['audio', 'voice'], true)) {
+            $mediaId = $message[$type]['id'] ?? null;
+            Log::info('WhatsApp audio/voice message received', [
                 'store_id' => $store->id,
                 'customer_phone' => $fromPhone,
-                'message_id' => $message['id'] ?? null,
+                'message_id' => $phoneId,
                 'message_type' => $type,
+                'media_id' => $mediaId,
             ]);
-
-            if ($fromPhone) {
-                WhatsAppService::sendMessage(
-                    $fromPhone,
-                    'Sofía aún está aprendiendo a escuchar. Por favor, escríbeme tu mensaje para poder ayudarte de inmediato. ✨',
-                    $store
-                );
-            }
-
-            return response('OK', 200);
         }
 
-        // Extract sender phone and message body
-        $body = $message['text']['body'] ?? null;
-
-        if (!$fromPhone || !$body) {
+        if (!$fromPhone || (!$body && !$mediaId)) {
             Log::warning('WhatsApp message incomplete', [
                 'store_id' => $store->id,
                 'has_from' => isset($message['from']),
                 'has_body' => isset($message['text']['body']),
                 'message_type' => $type,
+                'media_id_present' => isset($mediaId),
             ]);
             return response('OK', 200);
         }
@@ -179,14 +173,22 @@ class WhatsAppController extends Controller
         ]);
 
         // Dispatch job to process the message asynchronously
-        $phoneId = $message['id'] ?? null;
-        ProcessWhatsAppMessage::dispatch($store, $fromPhone, $body, $phoneId);
+        ProcessWhatsAppMessage::dispatch(
+            $store,
+            $fromPhone,
+            $body,
+            $phoneId,
+            $type,
+            $mediaId
+        );
 
         Log::info('WhatsApp message queued for processing', [
             'store_id' => $store->id,
             'conversation_id' => $conversation->id,
             'customer_phone' => $fromPhone,
             'message_id' => $phoneId,
+            'message_type' => $type,
+            'media_id' => $mediaId,
         ]);
 
         return response('EVENT_RECEIVED', 200);

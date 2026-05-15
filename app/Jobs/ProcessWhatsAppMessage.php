@@ -7,6 +7,7 @@ use App\Models\WhatsAppMessage;
 use App\Models\Product;
 use App\Models\Lead;
 use App\Factories\AIServiceFactory;
+use App\Services\AI\OpenAIService;
 use App\Services\WhatsAppService;
 use App\Services\Inventory\ProductFinderService;
 use Illuminate\Bus\Queueable;
@@ -16,6 +17,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 class ProcessWhatsAppMessage implements ShouldQueue
 {
@@ -32,8 +34,10 @@ class ProcessWhatsAppMessage implements ShouldQueue
     public function __construct(
         public Store $store,
         public string $from,
-        public string $messageBody,
-        public string $phoneId,
+        public ?string $messageBody,
+        public ?string $phoneId,
+        public ?string $messageType = null,
+        public ?string $mediaId = null,
         public ?int $productContext = null,
     ) {}
 
@@ -95,7 +99,74 @@ class ProcessWhatsAppMessage implements ShouldQueue
                 'store_name' => $this->store->name,
                 'customer_phone' => $this->from,
                 'message' => $this->messageBody,
+                'message_type' => $this->messageType,
+                'media_id' => $this->mediaId,
             ]);
+
+            if (in_array($this->messageType, ['audio', 'voice'], true) && empty($this->messageBody)) {
+                Log::info('Audio/voice message detected, starting transcription workflow', [
+                    'store_id' => $this->store->id,
+                    'customer_phone' => $this->from,
+                    'message_type' => $this->messageType,
+                    'media_id' => $this->mediaId,
+                ]);
+
+                if (!$this->mediaId) {
+                    Log::warning('Audio message missing media_id, cannot transcribe', [
+                        'store_id' => $this->store->id,
+                        'customer_phone' => $this->from,
+                        'message_type' => $this->messageType,
+                    ]);
+                    return;
+                }
+
+                $localPath = WhatsAppService::downloadMedia($this->mediaId, $this->store);
+                if (!$localPath) {
+                    Log::error('Failed to download audio media for transcription', [
+                        'store_id' => $this->store->id,
+                        'customer_phone' => $this->from,
+                        'media_id' => $this->mediaId,
+                    ]);
+                    return;
+                }
+
+                try {
+                    $openAi = new OpenAIService($this->store->ai_api_key, 'whisper-1');
+                    $transcribedText = $openAi->transcribeAudio(Storage::disk('local')->path($localPath));
+                    $this->messageBody = trim($transcribedText);
+
+                    if (empty($this->messageBody)) {
+                        throw new \Exception('Transcription returned empty text');
+                    }
+
+                    Log::info('Audio transcription completed successfully', [
+                        'store_id' => $this->store->id,
+                        'customer_phone' => $this->from,
+                        'media_id' => $this->mediaId,
+                        'transcription_preview' => substr($this->messageBody, 0, 200),
+                    ]);
+                } catch (\Exception $e) {
+                    Log::error('Audio transcription failed', [
+                        'store_id' => $this->store->id,
+                        'customer_phone' => $this->from,
+                        'media_id' => $this->mediaId,
+                        'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString(),
+                    ]);
+
+                    WhatsAppService::sendMessage(
+                        $this->from,
+                        'No pude transcribir tu audio. Por favor intenta de nuevo o escríbeme tu pregunta.',
+                        $this->store
+                    );
+
+                    return;
+                } finally {
+                    if (Storage::disk('local')->exists($localPath)) {
+                        Storage::disk('local')->delete($localPath);
+                    }
+                }
+            }
 
             // Retrieve product context at the beginning
             $productContext = $this->getProductContextWithTypes();

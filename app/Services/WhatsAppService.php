@@ -110,6 +110,99 @@ class WhatsAppService
     }
 
     /**
+     * Download WhatsApp media for transcription.
+     *
+     * @param string $mediaId WhatsApp media ID
+     * @param Store $store Store with WhatsApp credentials
+     * @param string|null $mimeType Optional mime type to help with extension
+     * @return string|null Relative disk path of downloaded file or null on failure
+     */
+    public static function downloadMedia(string $mediaId, Store $store, ?string $mimeType = null): ?string
+    {
+        try {
+            $urlResponse = Http::withToken($store->wa_access_token)
+                ->timeout(30)
+                ->get("https://graph.facebook.com/v20.0/{$mediaId}");
+
+            if ($urlResponse->failed()) {
+                Log::error('Failed to retrieve WhatsApp media URL', [
+                    'store_id' => $store->id,
+                    'media_id' => $mediaId,
+                    'status' => $urlResponse->status(),
+                    'body' => $urlResponse->body(),
+                ]);
+                return null;
+            }
+
+            $urlData = $urlResponse->json();
+            $downloadUrl = $urlData['url'] ?? null;
+
+            if (!$downloadUrl) {
+                Log::error('WhatsApp media URL missing from response', [
+                    'store_id' => $store->id,
+                    'media_id' => $mediaId,
+                    'response' => $urlData,
+                ]);
+                return null;
+            }
+
+            $mediaResponse = Http::withToken($store->wa_access_token)
+                ->timeout(60)
+                ->get($downloadUrl);
+
+            if ($mediaResponse->failed()) {
+                Log::error('Failed to download WhatsApp media content', [
+                    'store_id' => $store->id,
+                    'media_id' => $mediaId,
+                    'status' => $mediaResponse->status(),
+                    'body' => $mediaResponse->body(),
+                ]);
+                return null;
+            }
+
+            $contentType = $mediaResponse->header('Content-Type') ?: $mimeType;
+            $extension = 'ogg';
+            if ($contentType) {
+                if (str_contains($contentType, 'mpeg') || str_contains($contentType, 'mp3')) {
+                    $extension = 'mp3';
+                } elseif (str_contains($contentType, 'mp4') || str_contains($contentType, 'm4a')) {
+                    $extension = 'm4a';
+                } elseif (str_contains($contentType, 'ogg')) {
+                    $extension = 'ogg';
+                }
+            }
+
+            $relativePath = "whatsapp_media/{$mediaId}.{$extension}";
+            $stored = \Illuminate\Support\Facades\Storage::disk('local')->put($relativePath, $mediaResponse->body());
+
+            if (!$stored) {
+                Log::error('Failed to save WhatsApp media to disk', [
+                    'store_id' => $store->id,
+                    'media_id' => $mediaId,
+                    'relative_path' => $relativePath,
+                ]);
+                return null;
+            }
+
+            Log::info('WhatsApp media downloaded successfully', [
+                'store_id' => $store->id,
+                'media_id' => $mediaId,
+                'relative_path' => $relativePath,
+            ]);
+
+            return $relativePath;
+        } catch (\Exception $e) {
+            Log::error('Error downloading WhatsApp media', [
+                'store_id' => $store->id,
+                'media_id' => $mediaId,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            return null;
+        }
+    }
+
+    /**
      * Send a welcome message after successful setup
      *
      * @param Store $store Store with WhatsApp credentials
