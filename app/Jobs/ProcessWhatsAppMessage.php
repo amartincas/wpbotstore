@@ -239,6 +239,7 @@ class ProcessWhatsAppMessage implements ShouldQueue
             $systemPrompt .= "\n\n### SYSTEM METADATA:\n";
             $systemPrompt .= "Current Date/Time: " . now()->format('Y-m-d H:i:s') . "\n";
             $systemPrompt .= "Lead Completion Signal: [LEAD_COMPLETE]\n";
+            $systemPrompt .= "When the customer has confirmed a purchase, an order, or provided enough information to create a lead, append the exact token [LEAD_COMPLETE] at the end of your response. Do not use any other variation of that token.\n";
 
             // Get the configured AI service for this store
             $aiEngine = AIServiceFactory::make($this->store);
@@ -256,25 +257,26 @@ class ProcessWhatsAppMessage implements ShouldQueue
             // Get AI response with chat history
             $aiResponse = $aiEngine->getResponse($this->messageBody, $systemPrompt, $history);
 
-            // Check if lead collection is complete
-            $isLeadComplete = strpos($aiResponse, '[LEAD_COMPLETE]') !== false;
             $messageToSend = $aiResponse;
+            $hasLeadToken = strpos($aiResponse, '[LEAD_COMPLETE]') !== false;
 
-            // Clean the [LEAD_COMPLETE] tag from the message sent to user
-            if ($isLeadComplete) {
-                $messageToSend = preg_replace('/\[LEAD_COMPLETE\]/', '', $aiResponse);
-                $messageToSend = trim($messageToSend);
-                
-                // Extract lead data from conversation with AI assistance for accuracy
-                $leadData = $this->extractLeadDataWithAI($history, $aiResponse);
-                
+            // Extract lead data from the conversation for both explicit and fallback detection
+            $leadData = $this->extractLeadDataWithAI($history, $aiResponse);
+            $shouldCreateLead = $this->shouldCreateLeadFromResponse($aiResponse, $leadData, $hasLeadToken);
+
+            if ($shouldCreateLead) {
+                if ($hasLeadToken) {
+                    $messageToSend = preg_replace('/\[LEAD_COMPLETE\]/', '', $aiResponse);
+                    $messageToSend = trim($messageToSend);
+                }
+
                 Log::info('Lead data extracted', [
                     'store_id' => $this->store->id,
                     'customer_phone' => $this->from,
                     'extracted_data' => $leadData,
+                    'has_lead_token' => $hasLeadToken,
                 ]);
-                
-                // Create lead record
+
                 Lead::create([
                     'store_id' => $this->store->id,
                     'customer_phone' => $this->from,
@@ -285,11 +287,13 @@ class ProcessWhatsAppMessage implements ShouldQueue
                     'summary' => $messageToSend,
                     'is_processed' => false,
                 ]);
-                
+
                 Log::info('Lead created from WhatsApp conversation', [
                     'store_id' => $this->store->id,
                     'customer_phone' => $this->from,
                     'customer_name' => $leadData['customer_name'] ?? null,
+                    'product_service_name' => $leadData['product_service_name'] ?? null,
+                    'completion_method' => $hasLeadToken ? 'explicit_token' : 'heuristic_fallback',
                 ]);
             }
 
@@ -765,6 +769,52 @@ PROMPT;
     /**
      * Sanitize and validate string fields
      */
+    private function shouldCreateLeadFromResponse(string $aiResponse, array $leadData, bool $hasLeadToken): bool
+    {
+        if ($hasLeadToken) {
+            return true;
+        }
+
+        if (empty($leadData['product_service_name']) && empty($leadData['customer_name'])) {
+            return false;
+        }
+
+        if ($this->isLeadCompletionResponse($aiResponse)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private function isLeadCompletionResponse(string $aiResponse): bool
+    {
+        $text = mb_strtolower($aiResponse);
+        $patterns = [
+            'orden está confirmada',
+            'pedido está confirmado',
+            'tu orden está confirmada',
+            'tu pedido está confirmado',
+            'su pedido está confirmado',
+            'su orden está confirmada',
+            'pedido confirmado',
+            'orden confirmada',
+            'confirmo el pedido',
+            'confirmé el pedido',
+            'su pedido está casi listo',
+            'su orden está casi lista',
+            'orden lista',
+            'pedido listo',
+        ];
+
+        foreach ($patterns as $pattern) {
+            if (str_contains($text, $pattern)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private function sanitizeString(?string $value, int $maxLength = 255): ?string
     {
         if (!$value) {
