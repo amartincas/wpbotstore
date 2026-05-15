@@ -66,7 +66,18 @@
                     @foreach ($messages as $message)
                         <div style="display: flex; width: 100%; justify-content: {{ $message->role === 'user' ? 'flex-start' : 'flex-end' }};">
                             <div style="max-width: 75%; padding: 0.6rem 1rem; border-radius: 12px; background: {{ $message->role === 'user' ? 'white' : '#dcf8c6' }}; box-shadow: 0 1px 1px rgba(0,0,0,0.1);">
-                                <p style="font-size: 14px; margin: 0; word-wrap: break-word; white-space: pre-wrap; color: #111827;">{{ $message->content }}</p>
+                                @if(str_starts_with($message->content, '🎤 [AUDIO]:'))
+                                    <div style="display: flex; align-items: center; gap: 5px; margin-bottom: 5px;">
+                                        <span style="background: #e1f5fe; color: #25D366; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 4px; text-transform: uppercase;">
+                                            Nota de Voz
+                                        </span>
+                                    </div>
+                                    <p style="font-size: 14px; margin: 0; color: #111827; font-style: italic;">
+                                        {{ str_replace('🎤 [AUDIO]:', '', $message->content) }}
+                                    </p>
+                                @else
+                                    <p style="font-size: 14px; margin: 0; word-wrap: break-word; white-space: pre-wrap; color: #111827;">{{ $message->content }}</p>
+                                @endif
                                 <div style="font-size: 10px; color: #6b7280; text-align: right; margin-top: 4px;">{{ $message->created_at->format('H:i') }}</div>
                             </div>
                         </div>

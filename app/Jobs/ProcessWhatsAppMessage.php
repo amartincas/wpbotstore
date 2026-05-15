@@ -133,7 +133,7 @@ class ProcessWhatsAppMessage implements ShouldQueue
                 try {
                     $openAi = new OpenAIService($this->store->ai_api_key, 'whisper-1');
                     $transcribedText = $openAi->transcribeAudio(Storage::disk('local')->path($localPath));
-                    $this->messageBody = trim($transcribedText);
+                    $this->messageBody = "🎤 [AUDIO]: " . trim($transcribedText);
 
                     if (empty($this->messageBody)) {
                         throw new \Exception('Transcription returned empty text');
