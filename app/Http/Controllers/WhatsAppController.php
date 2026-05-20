@@ -64,13 +64,15 @@ class WhatsAppController extends Controller
      */
     public function handle(Request $request, string $store_token): Response
     {
-        // Find store by decrypted wa_verify_token
-        // Since wa_verify_token is encrypted in DB, we load all stores and compare
-        $store = Store::all()->firstWhere('wa_verify_token', $store_token);
+        // Resolve the active store from webhook metadata first.
+        // This is critical for multi-tenant support when more than one store is active.
+        $payload = $request->json()->all();
+        $store = $this->resolveStoreFromPayload($payload, $store_token);
 
         if (!$store) {
-            Log::warning('WhatsApp message handling failed: store not found', [
-                'token_length' => strlen($store_token),
+            Log::warning('WhatsApp message handling failed: unable to resolve store from payload metadata or fallback token', [
+                'store_token' => $store_token,
+                'payload_metadata' => data_get($payload, 'entry.0.changes.0.value.metadata'),
             ]);
             return response('Not Found', 404);
         }
@@ -192,5 +194,24 @@ class WhatsAppController extends Controller
         ]);
 
         return response('EVENT_RECEIVED', 200);
+    }
+
+    private function resolveStoreFromPayload(array $payload, ?string $fallbackToken = null): ?Store
+    {
+        $metadata = data_get($payload, 'entry.0.changes.0.value.metadata', []);
+        $phoneNumberId = $metadata['phone_number_id'] ?? $metadata['phoneNumberId'] ?? null;
+
+        if ($phoneNumberId) {
+            $store = Store::where('wa_phone_number_id', $phoneNumberId)->first();
+            if ($store) {
+                return $store;
+            }
+        }
+
+        if ($fallbackToken) {
+            return Store::all()->firstWhere('wa_verify_token', $fallbackToken);
+        }
+
+        return null;
     }
 }
