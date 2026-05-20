@@ -64,13 +64,15 @@ class WhatsAppController extends Controller
      */
     public function handle(Request $request, string $store_token): Response
     {
-        // Resolve the active store from webhook metadata first.
-        // This is critical for multi-tenant support when more than one store is active.
+        Log::info('Raw WhatsApp Webhook Payload', ['payload' => $request->all()]);
+
+        // Resolve the active store using webhook metadata only for incoming POST messages.
+        // Do not validate or reject based on the URL route token on regular incoming messages.
         $payload = $request->json()->all();
-        $store = $this->resolveStoreFromPayload($payload, $store_token);
+        $store = $this->resolveStoreFromPayload($payload);
 
         if (!$store) {
-            Log::warning('WhatsApp message handling failed: unable to resolve store from payload metadata or fallback token', [
+            Log::warning('WhatsApp message handling failed: unable to resolve store from webhook metadata', [
                 'store_token' => $store_token,
                 'payload_metadata' => data_get($payload, 'entry.0.changes.0.value.metadata'),
             ]);
@@ -79,8 +81,6 @@ class WhatsAppController extends Controller
 
         // Always return 200 immediately to acknowledge receipt
         // Process messages asynchronously to avoid timeout issues
-
-        $payload = $request->json()->all();
 
         Log::debug('WhatsApp webhook received', [
             'store_id' => $store->id,
@@ -196,22 +196,15 @@ class WhatsAppController extends Controller
         return response('EVENT_RECEIVED', 200);
     }
 
-    private function resolveStoreFromPayload(array $payload, ?string $fallbackToken = null): ?Store
+    private function resolveStoreFromPayload(array $payload): ?Store
     {
         $metadata = data_get($payload, 'entry.0.changes.0.value.metadata', []);
         $phoneNumberId = $metadata['phone_number_id'] ?? $metadata['phoneNumberId'] ?? null;
 
-        if ($phoneNumberId) {
-            $store = Store::where('wa_phone_number_id', $phoneNumberId)->first();
-            if ($store) {
-                return $store;
-            }
+        if (empty($phoneNumberId)) {
+            return null;
         }
 
-        if ($fallbackToken) {
-            return Store::all()->firstWhere('wa_verify_token', $fallbackToken);
-        }
-
-        return null;
+        return Store::where('wa_phone_number_id', (string) $phoneNumberId)->first();
     }
 }
