@@ -9,6 +9,7 @@ use App\Services\WhatsAppService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
 
 class WhatsAppController extends Controller
 {
@@ -63,141 +64,104 @@ class WhatsAppController extends Controller
      * @return Response
      */
     public function handle(Request $request, string $store_token): Response
-    {
-        $payload = $request->json()->all();
+{
+    $payload = $request->json()->all();
 
-        // 1. FILTRAR EVENTOS DE ESTADO (Sent, Delivered, Read)
-        // Si el payload contiene 'statuses', respondemos 200 inmediatamente y salimos en silencio
-        if (isset($payload['entry'][0]['changes'][0]['value']['statuses'])) {
-            return response('OK', 200);
+    // 1. FILTRAR EVENTOS DE ESTADO (Sent, Delivered, Read)
+    if (isset($payload['entry'][0]['changes'][0]['value']['statuses'])) {
+        return response('OK', 200);
+    }
+
+    // Extract first message from the array
+    $messages = $payload['entry'][0]['changes'][0]['value']['messages'] ?? [];
+    if (empty($messages)) {
+        return response('OK', 200);
+    }
+
+    $message = $messages[0];
+    $phoneId = $message['id'] ?? null; // Este es el WAMID único de Meta
+
+    // 🔥 CONTROL DE IDEMPOTENCIA: Bloquear reintentos de Meta de inmediato
+    if ($phoneId) {
+        $cacheKey = "whatsapp_msg_processed:{$phoneId}";
+        
+        // Si el ID ya existe en la caché, es un reintento. Respondemos 200 y salimos.
+        if (Cache::has($cacheKey)) {
+            Log::warning('WhatsApp Webhook: Reintento de Meta detectado e ignorado.', ['message_id' => $phoneId]);
+            return response('EVENT_RECEIVED', 200);
         }
+        
+        // Guardamos el ID en caché por 10 minutos para evitar duplicados
+        Cache::put($cacheKey, true, now()->addMinutes(10));
+    }
 
-        // Si pasa el filtro anterior, guardamos el log real del mensaje entrante
-        Log::info('Raw WhatsApp Webhook Payload', ['payload' => $payload]);
+    // Si pasa los filtros, guardamos el log real del mensaje entrante
+    Log::info('Raw WhatsApp Webhook Payload', ['payload' => $payload]);
 
-        // Resolve the active store using webhook metadata only for incoming POST messages.
-        $store = $this->resolveStoreFromPayload($payload);
-
-        if (!$store) {
-            Log::warning('WhatsApp message handling failed: unable to resolve store from webhook metadata', [
-                'store_token' => $store_token,
-                'payload_metadata' => data_get($payload, 'entry.0.changes.0.value.metadata'),
-            ]);
-            return response('Not Found', 404);
-        }
-
-        Log::debug('WhatsApp webhook received', [
-            'store_id' => $store->id,
-            'store_name' => $store->name,
-            'payload' => $payload,
+    $store = $this->resolveStoreFromPayload($payload);
+    if (!$store) {
+        Log::warning('WhatsApp message handling failed: unable to resolve store from webhook metadata', [
+            'store_token' => $store_token,
+            'payload_metadata' => data_get($payload, 'entry.0.changes.0.value.metadata'),
         ]);
+        return response('Not Found', 404);
+    }
 
-        // Check if this is a message event (not a status update)
-        if (!isset($payload['entry'][0]['changes'][0]['value']['messages'])) {
-            Log::debug('WhatsApp webhook received but no messages array found', [
-                'store_id' => $store->id,
-            ]);
-            return response('OK', 200);
-        }
+    $type = $message['type'] ?? null;
+    $fromPhone = $message['from'] ?? null;
 
-        // Extract first message from the array
-        $messages = $payload['entry'][0]['changes'][0]['value']['messages'];
-        if (empty($messages)) {
-            Log::debug('WhatsApp messages array is empty', [
-                'store_id' => $store->id,
-            ]);
-            return response('OK', 200);
-        }
+    $body = null;
+    $mediaId = null;
 
-        $message = $messages[0];
-        $type = $message['type'] ?? null;
-        $fromPhone = $message['from'] ?? null;
-        $phoneId = $message['id'] ?? null;
-
-        $body = null;
-        $mediaId = null;
-
-        if ($type === 'text') {
-            $body = $message['text']['body'] ?? null;
-        } elseif (in_array($type, ['audio', 'voice'], true)) {
-            $mediaId = $message[$type]['id'] ?? null;
-            Log::info('WhatsApp audio/voice message received', [
-                'store_id' => $store->id,
-                'customer_phone' => $fromPhone,
-                'message_id' => $phoneId,
-                'message_type' => $type,
-                'media_id' => $mediaId,
-            ]);
-        }
-
-        if (!$fromPhone || (!$body && !$mediaId)) {
-            Log::warning('WhatsApp message incomplete', [
-                'store_id' => $store->id,
-                'has_from' => isset($message['from']),
-                'has_body' => isset($message['text']['body']),
-                'message_type' => $type,
-                'media_id_present' => isset($mediaId),
-            ]);
-            return response('OK', 200);
-        }
-
-        // Log the actual message content clearly
-        Log::info("CONTENIDO REAL: " . $body);
-
-        // Log extracted message data
-        Log::info('WhatsApp message received', [
+    if ($type === 'text') {
+        $body = $message['text']['body'] ?? null;
+    } elseif (in_array($type, ['audio', 'voice'], true)) {
+        $mediaId = $message[$type]['id'] ?? null;
+        
+        // 💡 Si es audio, ponle un placeholder temporal al body para evitar romper la lógica aguas abajo
+        $body = "[Mensaje de Voz/Audio]"; 
+        
+        Log::info('WhatsApp audio/voice message received', [
             'store_id' => $store->id,
-            'store_name' => $store->name,
-            'customer_phone' => $fromPhone,
-            'message_body' => $body,
-            'message_id' => $message['id'] ?? null,
-            'timestamp' => $message['timestamp'] ?? null,
-        ]);
-
-        // Save to conversations table - find or create conversation for this customer
-        $conversation = Conversation::firstOrCreate(
-            [
-                'store_id' => $store->id,
-                'customer_phone' => $fromPhone,
-            ],
-            [
-                'last_session_at' => now(),
-            ]
-        );
-
-        // Update last_session_at if conversation already existed
-        if ($conversation->wasRecentlyCreated === false) {
-            $conversation->update(['last_session_at' => now()]);
-        }
-
-        Log::debug('Conversation saved', [
-            'store_id' => $store->id,
-            'conversation_id' => $conversation->id,
-            'customer_phone' => $fromPhone,
-            'created' => $conversation->wasRecentlyCreated,
-        ]);
-
-        // Dispatch job to process the message asynchronously
-        ProcessWhatsAppMessage::dispatch(
-            $store,
-            $fromPhone,
-            $body,
-            $phoneId,
-            $type,
-            $mediaId
-        );
-
-        Log::info('WhatsApp message queued for processing', [
-            'store_id' => $store->id,
-            'conversation_id' => $conversation->id,
             'customer_phone' => $fromPhone,
             'message_id' => $phoneId,
-            'message_type' => $type,
             'media_id' => $mediaId,
         ]);
-
-        return response('EVENT_RECEIVED', 200);
     }
+
+    if (!$fromPhone || (!$body && !$mediaId)) {
+        return response('OK', 200);
+    }
+
+    Log::info("CONTENIDO REAL: " . $body);
+
+    // Find or create conversation
+    $conversation = Conversation::firstOrCreate(
+        ['store_id' => $store->id, 'customer_phone' => $fromPhone],
+        ['last_session_at' => now()]
+    );
+
+    if ($conversation->wasRecentlyCreated === false) {
+        $conversation->update(['last_session_at' => now()]);
+    }
+
+    // Dispatch job to process the message asynchronously
+    ProcessWhatsAppMessage::dispatch(
+        $store,
+        $fromPhone,
+        $body,
+        $phoneId,
+        $type,
+        $mediaId
+    );
+
+    Log::info('WhatsApp message queued for processing', [
+        'store_id' => $store->id,
+        'message_id' => $phoneId,
+    ]);
+
+    return response('EVENT_RECEIVED', 200);
+}
 
     private function resolveStoreFromPayload(array $payload): ?Store
     {
