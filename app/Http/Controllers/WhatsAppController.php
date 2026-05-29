@@ -13,6 +13,7 @@ use Illuminate\Http\Response;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Auth;
 
 class WhatsAppController extends Controller
 {
@@ -195,6 +196,18 @@ class WhatsAppController extends Controller
      */
     public function sendManualTemplate(Request $request): JsonResponse
     {
+        $user = Auth::guard('web')->user();
+
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthenticated.',
+            ], 401);
+        }
+
+        // Derive store from the authenticated user
+        $storeId = $user->store_id;    
+
         // ── 1. Validate ───────────────────────────────────────────────────────
         $validated = $request->validate([
             'lead_id'        => ['required', 'integer', 'exists:leads,id'],
