@@ -19,6 +19,7 @@ use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
+use Illuminate\Support\Facades\Route;
 
 class YesPanelProvider extends PanelProvider
 {
@@ -56,6 +57,11 @@ class YesPanelProvider extends PanelProvider
             ])
             ->authMiddleware([
                 Authenticate::class,
-            ]);
+            ])
+            ->routes(function () {
+                Route::post('/whatsapp/templates/send', 
+                    [\App\Http\Controllers\WhatsAppController::class, 'sendManualTemplate']
+                );
+            });
     }
 }

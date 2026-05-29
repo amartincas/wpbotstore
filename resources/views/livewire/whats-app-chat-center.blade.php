@@ -54,7 +54,7 @@
                 };
 
                 try {                    
-                    const response = await fetch('/internal/whatsapp/templates/send', {
+                    const response = await fetch('/whatsapp/templates/send', {
                         method: 'POST',
                         headers: {
                             'Content-Type':  'application/json',
