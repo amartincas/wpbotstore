@@ -47,8 +47,6 @@
                     customValues.push(input.value);
                 });
 
-                // Get the Livewire component instance by its name since $wire
-                // is not available outside Livewire's DOM tree
                 const components = Livewire.all();
                 const chatComponent = components.find(c => 
                     c.name === 'whats-app-chat-center' || 
@@ -62,12 +60,12 @@
                 }
 
                 try {
-                    await chatComponent.sendTemplate(this.currentTemplateId, customValues);
+                    await chatComponent.call('sendTemplate', this.currentTemplateId, customValues);
                     alert('Plantilla enviada con exito');
                     this.closeModal();
                 } catch (error) {
                     console.error('sendTemplate error:', error);
-                    alert('Error al enviar la plantilla.');
+                    alert('Error al enviar la plantilla: ' + error.message);
                 }
             }
         }));
