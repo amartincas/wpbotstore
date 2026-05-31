@@ -50,18 +50,11 @@
                 const chatComponent = Livewire.all().find(c => c.name === 'whats-app-chat-center');
 
                 if (!chatComponent) {
-                    alert('Error: No se pudo encontrar el componente Livewire.');
                     return;
                 }
 
-                try {
-                    await chatComponent.$wire.sendTemplate(this.currentTemplateId, customValues);
-                    alert('Plantilla enviada con exito');
-                    this.closeModal();
-                } catch (error) {
-                    console.error('sendTemplate error:', error);
-                    alert('Error al enviar la plantilla: ' + error.message);
-                }
+                await chatComponent.$wire.sendTemplate(this.currentTemplateId, customValues);
+                this.closeModal();
             }
         }));
     });

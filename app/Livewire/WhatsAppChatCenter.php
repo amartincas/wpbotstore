@@ -422,6 +422,14 @@ class WhatsAppChatCenter extends Component
         }
 
         if ($sent) {
+            // Save the template message to the chat history so it appears in the UI
+            WhatsAppMessage::create([
+                'store_id'       => $storeId,
+                'customer_phone' => $this->selectedPhone,
+                'content'        => $template->body_preview, // use body_preview as the displayed text
+                'role'           => 'assistant',
+            ]);
+
             Notification::make()
                 ->title('Plantilla enviada')
                 ->body('El mensaje fue enviado correctamente al cliente.')
@@ -431,6 +439,10 @@ class WhatsAppChatCenter extends Component
             if ($template->is_reengagement && $lead) {
                 $lead->update(['status' => 'waiting_customer', 'bot_active' => true]);
             }
+
+            $this->loadConversations();
+            $this->dispatch('scroll-down');
+
         } else {
             Notification::make()
                 ->title('Error al enviar')
