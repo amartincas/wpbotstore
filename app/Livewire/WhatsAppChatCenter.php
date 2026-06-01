@@ -430,7 +430,7 @@ class WhatsAppChatCenter extends Component
         }
 
         if ($sent) {
-            $renderedBody = $template->body;
+            $renderedBody = $template->body_preview;
             foreach (array_values($resolvedValues) as $index => $value) {
                 $placeholder = '{{'. ($index + 1). '}}';
                 $renderedBody = str_replace($placeholder, $value, $renderedBody);
