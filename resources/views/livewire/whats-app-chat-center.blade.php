@@ -29,13 +29,15 @@
                 this.selectedTemplateName = '';
                 this.currentParamsMap     = {};
                 this.templateValues       = [];
+                this.selectedTemplateRequiresPhone = false;
+                this.externalPhone = '';
             },
 
             closeModal() {
                 this.open = false;
             },
 
-            selectTemplate(id, name, paramsMap) {
+            selectTemplate(id, name, paramsMap, requiresPhone = false) {
                 this.currentTemplateId    = id;
                 this.selectedTemplateName = name;
                 this.currentParamsMap     = paramsMap;
@@ -43,6 +45,8 @@
                 Object.keys(paramsMap).forEach(k => {
                     this.templateValues[k] = '';
                 });
+                this.selectedTemplateRequiresPhone = !!requiresPhone;
+                this.externalPhone = '';
                 console.log('selectTemplate paramsMap', paramsMap);
                 console.log('templateValues inicializado', this.templateValues);
                 this.templateFormVisible  = true;
@@ -51,9 +55,9 @@
             async submitTemplate() {
                 const customValues = Object.keys(this.currentParamsMap)
                 .sort((a, b) => Number(a) - Number(b))
-                .map(k => this.templateValues[k] || '');
+                .map(k => (this.templateValues[k] || '').trim());
 
-                console.log('submitTemplate customValues', customValues);
+                console.log('submitTemplate customValues', customValues, 'requiresPhone', this.selectedTemplateRequiresPhone, 'externalPhone', this.externalPhone);
 
                 const chatComponent = Livewire.all().find(c => c.name === 'whats-app-chat-center');
 
@@ -61,7 +65,7 @@
                     return;
                 }
 
-                await chatComponent.$wire.sendTemplate(this.currentTemplateId, customValues);
+                await chatComponent.$wire.sendTemplate(this.currentTemplateId, customValues, this.selectedTemplateRequiresPhone ? (this.externalPhone || null) : null);
                 this.closeModal();
             }
         }));
@@ -200,7 +204,7 @@
                     @foreach(\App\Models\WhatsAppTemplate::where('store_id', Auth::user()->store_id)->get() as $tpl)
                         <div
                             style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px; cursor: pointer; background: white;"
-                            @click="selectTemplate('{{ $tpl->id }}', '{{ $tpl->name }}', {{ Js::from($tpl->parameters_map) }})"
+                            @click="selectTemplate('{{ $tpl->id }}', '{{ $tpl->name }}', {{ Js::from($tpl->parameters_map) }}, {{ $tpl->requires_phone_input ? 'true' : 'false' }})"
                             @mouseenter="$el.style.background='#f9fafb'"
                             @mouseleave="$el.style.background='white'">
                             <div style="font-weight: bold; font-size: 13px; color: #2563eb;">{{ $tpl->name }}</div>
@@ -218,6 +222,10 @@
                     </h5>
 
                     <div style="display: flex; flex-direction: column; gap: 8px;">
+                        <div x-show="selectedTemplateRequiresPhone" style="display: none;">
+                            <label style="font-size: 11px; font-weight: bold; color: #374151; display: block; margin-bottom: 4px;">Enviar a (telefono):</label>
+                            <input type="text" x-model="externalPhone" placeholder="593995909073 or +593995909073" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; color: black; box-sizing: border-box;" />
+                        </div>
                         <template x-for="(fieldName, key) in currentParamsMap" :key="key">
                             <div>
                                 <label

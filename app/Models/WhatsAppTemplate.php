@@ -14,6 +14,7 @@ class WhatsAppTemplate extends Model
         'name',
         'body_preview',
         'parameters_map',
+        'requires_phone_input',
         'language',
         'type',
         'is_reengagement',
@@ -22,6 +23,7 @@ class WhatsAppTemplate extends Model
     protected $casts = [
         'parameters_map'  => 'array',
         'is_reengagement' => 'boolean',
+        'requires_phone_input' => 'boolean',
     ];
 
     public function store(): BelongsTo

@@ -86,6 +86,15 @@ class WhatsAppTemplateForm
                 ->inline(false)
                 ->columnSpanFull(),
 
+            Toggle::make('requires_phone_input')
+                ->label('Request Phone Number')
+                ->helperText('Enable this for templates intended for new contacts not yet in the chat list.')
+                ->onColor('success')
+                ->offColor('gray')
+                ->default(false)
+                ->inline(false)
+                ->columnSpanFull(),
+
         ]);
     }
 }

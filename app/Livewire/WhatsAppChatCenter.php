@@ -3,6 +3,7 @@
 namespace App\Livewire;
 
 use App\Models\Lead;
+use App\Models\Conversation;
 use App\Models\Store;
 use App\Models\WhatsAppMessage;
 use App\Services\WhatsAppService;
@@ -357,7 +358,7 @@ class WhatsAppChatCenter extends Component
         ]);
     }
 
-    public function sendTemplate(int $templateId, array $customValues = []): void
+    public function sendTemplate(int $templateId, array $customValues = [], ?string $externalPhone = null): void
     {
         // Resolve store_id using the same pattern as sendMessage()
         $isSuperAdmin = Auth::user()?->is_super_admin ?? false;
@@ -417,8 +418,44 @@ class WhatsAppChatCenter extends Component
 
         Log::info('DEBUG resolvedValues', ['resolvedValues' => array_values($resolvedValues)]);
 
+        // Determine target phone: use externalPhone when template requires it
+        $sendTo = $this->selectedPhone;
+        if ($template->requires_phone_input) {
+            if (empty($externalPhone)) {
+                Log::warning('sendTemplate: external phone required but not provided', ['template_id' => $templateId, 'store_id' => $storeId]);
+                $this->dispatch('template-sent-error');
+                return;
+            }
+
+            // Basic normalization & validation
+            $normalized = preg_replace('/\s+/', '', $externalPhone);
+            if (!preg_match('/^\+?\d{6,15}$/', $normalized)) {
+                Log::warning('sendTemplate: invalid external phone format', ['external_phone' => $externalPhone]);
+                $this->dispatch('template-sent-error');
+                return;
+            }
+
+            $dbPhone = ltrim($normalized, '+');
+
+            // Ensure lead exists for this phone
+            $lead = Lead::firstOrCreate(
+                ['store_id' => $storeId, 'customer_phone' => $dbPhone],
+                ['customer_name' => 'Unknown', 'summary' => 'Proactive message', 'bot_active' => false]
+            );
+
+            // Ensure conversation exists
+            Conversation::firstOrCreate([
+                'store_id' => $storeId,
+                'customer_phone' => $dbPhone,
+            ], [
+                'last_session_at' => now(),
+            ]);
+
+            $sendTo = $dbPhone;
+        }
+
         $sent = WhatsAppService::sendTemplateMessage(
-            to:           $this->selectedPhone,
+            to:           $sendTo,
             templateName: $template->name,
             languageCode: $template->language,
             variables:    array_values($resolvedValues),
