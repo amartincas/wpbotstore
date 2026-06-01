@@ -150,6 +150,11 @@ class WhatsAppService
                 'variable_count' => count($variables),
             ]);
 
+            Log::debug('WhatsApp full payload', [
+                'url' => $url,
+                'payload' => $payload
+            ]);
+
             $response = Http::withToken($store->wa_access_token)
                 ->timeout(15)
                 ->post($url, $payload);
