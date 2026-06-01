@@ -39,14 +39,21 @@
                 this.currentTemplateId    = id;
                 this.selectedTemplateName = name;
                 this.currentParamsMap     = paramsMap;
-                this.templateValues = Object.keys(paramsMap).map(() => '');
+                this.templateValues = {};
+                Object.keys(paramsMap).forEach(k => {
+                    this.templateValues[k] = '';
+                });
                 console.log('selectTemplate paramsMap', paramsMap);
                 console.log('templateValues inicializado', this.templateValues);
                 this.templateFormVisible  = true;
             },
 
             async submitTemplate() {
-                console.log('submitTemplate customValues', this.templateValues);
+                const customValues = Object.keys(this.currentParamsMap)
+                .sort((a, b) => Number(a) - Number(b))
+                .map(k => this.templateValues[k] || '');
+
+                console.log('submitTemplate customValues', customValues);
 
                 const chatComponent = Livewire.all().find(c => c.name === 'whats-app-chat-center');
 
@@ -54,7 +61,7 @@
                     return;
                 }
 
-                await chatComponent.$wire.sendTemplate(this.currentTemplateId, this.templateValues);
+                await chatComponent.$wire.sendTemplate(this.currentTemplateId, customValues);
                 this.closeModal();
             }
         }));
@@ -211,7 +218,7 @@
                     </h5>
 
                     <div style="display: flex; flex-direction: column; gap: 8px;">
-                        <template x-for="(fieldName, key, index) in currentParamsMap" :key="key">
+                        <template x-for="(fieldName, key) in currentParamsMap" :key="key">
                             <div>
                                 <label
                                     style="font-size: 11px; font-weight: bold; color: #374151; display: block; margin-bottom: 4px;"
@@ -219,7 +226,7 @@
                                 </label>
                                 <input
                                     type="text"
-                                    x-model="templateValues[index]"
+                                    x-model="templateValues[key]"
                                     style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; color: black; box-sizing: border-box;">
                             </div>
                         </template>
