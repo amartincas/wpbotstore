@@ -92,7 +92,7 @@ class ProductForm
                     ->helperText('Upload multiple images (JPG, PNG, WebP). The first image will be used as primary.')
                     ->columnSpanFull()
                     // Load existing images from the relationship
-                    ->formatStateUsing(fn ($record) => $record?->images()->pluck('image_path')->toArray() ?? [])
+                    ->formatStateUsing(fn ($record) => $record?->images()->pluck('id')->toArray() ?? [])
                     ->dehydrated(false),
             ]);
     }
