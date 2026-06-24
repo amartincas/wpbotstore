@@ -7,6 +7,7 @@ use App\Models\Conversation;
 use App\Models\Store;
 use App\Models\WhatsAppMessage;
 use App\Services\WhatsAppService;
+use App\Services\WhatsAppStatusTracker;
 use Livewire\Attributes\On;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -27,6 +28,7 @@ class WhatsAppChatCenter extends Component
     public $stores = []; // Available stores for superuser filter
     public ?int $selectedLeadId = null; // For JS modal
     public $whatsappTemplates = [];    // List templates
+    public $messageStatuses = [];      // Message delivery statuses from cache
 
     public function mount()
     {
@@ -147,6 +149,9 @@ class WhatsAppChatCenter extends Component
         $this->selectedPhone = (string) $phone;
         $this->loadConversations(); // Force message load
 
+        // Fetch message statuses for this conversation
+        $this->getMessageStatuses();
+
         $isSuperAdmin = Auth::user()?->is_super_admin ?? false;
         
         if ($isSuperAdmin && !$this->filterStoreId) {
@@ -248,7 +253,7 @@ class WhatsAppChatCenter extends Component
         try {
             // 1. Save message to database (sent by operator)
             // CRITICAL: role='assistant' ensures bot maintains context when re-enabled
-            WhatsAppMessage::create([
+            $message = WhatsAppMessage::create([
                 'store_id' => $storeId,
                 'customer_phone' => $this->selectedPhone,
                 'content' => $this->newMessage,
@@ -258,23 +263,34 @@ class WhatsAppChatCenter extends Component
             // 2. Send via WhatsApp API
             $store = Store::find($storeId);
             if ($store) {
-                WhatsAppService::sendMessage($this->selectedPhone, $this->newMessage, $store);
+                $wamid = WhatsAppService::sendMessage($this->selectedPhone, $this->newMessage, $store);
+                
+                // 3. Track message status if WAMID was returned
+                if ($wamid) {
+                    WhatsAppStatusTracker::trackMessage($message->id, $wamid);
+                    
+                    Log::info('Message status tracking initiated', [
+                        'db_message_id' => $message->id,
+                        'wamid' => $wamid,
+                    ]);
+                }
                 
                 Log::info('Manual message sent via WhatsApp', [
                     'store_id' => $storeId,
                     'customer_phone' => $this->selectedPhone,
                     'message_length' => strlen($this->newMessage),
                     'role' => 'assistant',  // Log that this will be in AI context
+                    'wamid' => $wamid,
                 ]);
             } else {
                 Log::warning('sendMessage: Store not found', ['store_id' => $storeId]);
             }
 
-            // 3. Clear input and refresh
+            // 4. Clear input and refresh
             $this->newMessage = '';
             $this->loadConversations();
             
-            // 4. Scroll down
+            // 5. Scroll down
             $this->dispatch('scroll-down');
         } catch (\Exception $e) {
             Log::error('sendMessage: Failed to send message', [
@@ -482,10 +498,6 @@ class WhatsAppChatCenter extends Component
             store:        $store,
         );
 
-        if ($sent && $template->is_reengagement && $lead) {
-            $lead->update(['status' => 'waiting_customer', 'bot_active' => true]);
-        }
-
         if ($sent) {
             $renderedBody = $template->body_preview;
             foreach (array_values($resolvedValues) as $index => $value) {
@@ -493,12 +505,22 @@ class WhatsAppChatCenter extends Component
                 $renderedBody = str_replace($placeholder, $value, $renderedBody);
             }
 
-            WhatsAppMessage::create([
+            $message = WhatsAppMessage::create([
                 'store_id'       => $storeId,
                 'customer_phone' => $targetPhone,
                 'content'        => $renderedBody,
                 'role'           => 'assistant',
             ]);
+
+            // Track message status if WAMID was returned
+            if ($sent) {
+                WhatsAppStatusTracker::trackMessage($message->id, $sent);
+                
+                Log::info('Template message status tracking initiated', [
+                    'db_message_id' => $message->id,
+                    'wamid' => $sent,
+                ]);
+            }
 
             Notification::make()
                 ->title('Plantilla enviada')
@@ -527,6 +549,34 @@ class WhatsAppChatCenter extends Component
         $this->loadConversations();
         $this->dispatch('scroll-down');
         Log::info('Chat refreshed after template send', ['phone' => $this->selectedPhone]);
+    }
+
+    /**
+     * Get delivery statuses for all messages in current conversation
+     * Called by Livewire polling to fetch current message statuses from cache
+     * 
+     * @return void - Updates $messageStatuses property
+     */
+    public function getMessageStatuses(): void
+    {
+        if (!$this->selectedPhone) {
+            $this->messageStatuses = [];
+            return;
+        }
+
+        // Get all message IDs from the current conversation
+        $messageIds = WhatsAppMessage::where('customer_phone', $this->selectedPhone)
+            ->pluck('id')
+            ->toArray();
+
+        // Fetch all statuses from cache
+        $this->messageStatuses = WhatsAppStatusTracker::getMultipleStatuses($messageIds);
+
+        Log::debug('Message statuses fetched', [
+            'customer_phone' => $this->selectedPhone,
+            'message_count' => count($messageIds),
+            'tracked_count' => count($this->messageStatuses),
+        ]);
     }
 
 }

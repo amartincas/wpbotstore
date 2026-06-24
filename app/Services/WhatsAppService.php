@@ -15,9 +15,9 @@ class WhatsAppService
      * @param string $to Phone number in format: countrycode[phonenumber]
      * @param string $message Message text to send
      * @param Store $store Store with WhatsApp credentials
-     * @return bool True if message was sent successfully
+     * @return string|null WAMID (Meta's message ID) on success, null on failure
      */
-    public static function sendMessage(string $to, string $message, Store $store): bool
+    public static function sendMessage(string $to, string $message, Store $store): ?string
     {
         try {
             $url = "https://graph.facebook.com/v20.0/{$store->wa_phone_number_id}/messages";
@@ -53,17 +53,26 @@ class WhatsAppService
                     'status' => $response->status(),
                     'error' => $response->json(),
                 ]);
-                return false;
+                return null;
             }
 
-            return true;
+            // Extract WAMID from Meta's response
+            $wamid = data_get($response->json(), 'messages.0.id');
+            
+            Log::info('WhatsApp message sent successfully', [
+                'store_id' => $store->id,
+                'to' => $to,
+                'wamid' => $wamid,
+            ]);
+
+            return $wamid;
         } catch (\Exception $e) {
             Log::error('WhatsApp message send error', [
                 'store_id' => $store->id,
                 'to' => $to,
                 'error' => $e->getMessage(),
             ]);
-            return false;
+            return null;
         }
     }
 
@@ -99,7 +108,7 @@ class WhatsAppService
      * @param string  $languageCode BCP-47 code, e.g. "es_CO", "en_US"
      * @param array   $variables    Ordered list of replacement values for {{1}}, {{2}}, …
      * @param Store   $store        Store instance carrying wa_access_token & wa_phone_number_id
-     * @return bool                 True on successful delivery to Meta API
+     * @return string|null          WAMID (Meta's message ID) on success, null on failure
      */
     public static function sendTemplateMessage(
         string $to,
@@ -107,7 +116,7 @@ class WhatsAppService
         string $languageCode,
         array  $variables,
         Store  $store
-    ): bool {
+    ): ?string {
         try {
             $url = "https://graph.facebook.com/v20.0/{$store->wa_phone_number_id}/messages";
 
@@ -179,17 +188,20 @@ class WhatsAppService
                     'status'        => $response->status(),
                     'error'         => $response->json(),
                 ]);
-                return false;
+                return null;
             }
+
+            // Extract WAMID from Meta's response
+            $wamid = data_get($response->json(), 'messages.0.id');
 
             Log::info('WhatsApp template message sent successfully', [
                 'store_id'      => $store->id,
                 'to'            => $to,
                 'template_name' => $templateName,
-                'wamid'         => data_get($response->json(), 'messages.0.id'),
+                'wamid'         => $wamid,
             ]);
 
-            return true;
+            return $wamid;
 
         } catch (\Exception $e) {
             Log::error('WhatsApp template message send exception', [
@@ -199,7 +211,7 @@ class WhatsAppService
                 'error'         => $e->getMessage(),
                 'trace'         => $e->getTraceAsString(),
             ]);
-            return false;
+            return null;
         }
     }
 

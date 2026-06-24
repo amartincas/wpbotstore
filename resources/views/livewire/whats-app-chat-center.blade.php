@@ -126,12 +126,33 @@
                     </div>
 
                     {{-- Messages --}}
-                    <div id="chat-container" wire:poll.3s style="flex: 1; overflow-y: auto; padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem;">
+                    <div id="chat-container" wire:poll.3s="getMessageStatuses" style="flex: 1; overflow-y: auto; padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem;">
                         @foreach ($messages as $message)
                             <div style="display: flex; width: 100%; justify-content: {{ $message->role === 'user' ? 'flex-start' : 'flex-end' }};">
-                                <div style="max-width: 75%; padding: 0.6rem 1rem; border-radius: 12px; background: {{ $message->role === 'user' ? 'white' : '#dcf8c6' }}; box-shadow: 0 1px 1px rgba(0,0,0,0.1);">
-                                    <p style="font-size: 14px; margin: 0; word-wrap: break-word; white-space: pre-wrap; color: #111827;">{{ $message->content }}</p>
-                                    <div style="font-size: 10px; color: #6b7280; text-align: right; margin-top: 4px;">{{ $message->created_at->format('H:i') }}</div>
+                                <div style="display: flex; align-items: flex-end; gap: 0.3rem; max-width: 75%;">
+                                    <div style="padding: 0.6rem 1rem; border-radius: 12px; background: {{ $message->role === 'user' ? 'white' : '#dcf8c6' }}; box-shadow: 0 1px 1px rgba(0,0,0,0.1);">
+                                        <p style="font-size: 14px; margin: 0; word-wrap: break-word; white-space: pre-wrap; color: #111827;">{{ $message->content }}</p>
+                                        <div style="font-size: 10px; color: #6b7280; text-align: right; margin-top: 4px;">{{ $message->created_at->format('H:i') }}</div>
+                                    </div>
+                                    @if($message->role === 'assistant')
+                                        <div style="font-size: 12px; margin-bottom: 2px; min-width: 20px; text-align: center;">
+                                            @php
+                                                $status = $messageStatuses[$message->id] ?? null;
+                                                $statusValue = $status['status'] ?? 'pending';
+                                            @endphp
+                                            @if($statusValue === 'pending')
+                                                <span title="Enviando..." style="color: #9ca3af;">⏱️</span>
+                                            @elseif($statusValue === 'sent')
+                                                <span title="Enviado" style="color: #6b7280;">✓</span>
+                                            @elseif($statusValue === 'delivered')
+                                                <span title="Entregado" style="color: #6b7280;">✓✓</span>
+                                            @elseif($statusValue === 'read')
+                                                <span title="Leído" style="color: #3b82f6;">✓✓</span>
+                                            @elseif($statusValue === 'failed')
+                                                <span title="No enviado" style="color: #ef4444;">✗</span>
+                                            @endif
+                                        </div>
+                                    @endif
                                 </div>
                             </div>
                         @endforeach

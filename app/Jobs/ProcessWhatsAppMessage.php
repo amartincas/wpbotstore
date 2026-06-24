@@ -9,6 +9,7 @@ use App\Models\Lead;
 use App\Factories\AIServiceFactory;
 use App\Services\AI\OpenAIService;
 use App\Services\WhatsAppService;
+use App\Services\WhatsAppStatusTracker;
 use App\Services\Inventory\ProductFinderService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -314,7 +315,7 @@ class ProcessWhatsAppMessage implements ShouldQueue
             ]);
 
             // Save AI response to database
-            WhatsAppMessage::create([
+            $aiMessage = WhatsAppMessage::create([
                 'store_id' => $this->store->id,
                 'customer_phone' => $this->from,
                 'role' => 'assistant',
@@ -322,13 +323,24 @@ class ProcessWhatsAppMessage implements ShouldQueue
             ]);
 
             // Send AI response back to customer (without the [LEAD_COMPLETE] tag)
-            WhatsAppService::sendMessage($this->from, $messageToSend, $this->store);
+            $wamid = WhatsAppService::sendMessage($this->from, $messageToSend, $this->store);
+
+            // Track message status if WAMID was returned
+            if ($wamid) {
+                WhatsAppStatusTracker::trackMessage($aiMessage->id, $wamid);
+                
+                Log::info('AI message status tracking initiated', [
+                    'db_message_id' => $aiMessage->id,
+                    'wamid' => $wamid,
+                ]);
+            }
 
             Log::info('WhatsApp message processed successfully by job', [
                 'store_id' => $this->store->id,
                 'store_name' => $this->store->name,
                 'customer_phone' => $this->from,
                 'message_body' => $this->messageBody,
+                'wamid' => $wamid,
             ]);
         } catch (\Exception $e) {
             // Log the specific error with full context

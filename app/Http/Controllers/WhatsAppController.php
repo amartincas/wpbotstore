@@ -6,6 +6,7 @@ use App\Models\Store;
 use App\Models\Conversation;
 use App\Jobs\ProcessWhatsAppMessage;
 use App\Services\WhatsAppService;
+use App\Services\WhatsAppStatusTracker;
 use App\Models\Lead;
 use App\Models\WhatsAppTemplate;
 use Illuminate\Http\Request;
@@ -71,8 +72,24 @@ class WhatsAppController extends Controller
 {
     $payload = $request->json()->all();
 
-    // 1. FILTRAR EVENTOS DE ESTADO (Sent, Delivered, Read)
+    // 1. PROCESS STATUS EVENTS (Sent, Delivered, Read, Failed)
     if (isset($payload['entry'][0]['changes'][0]['value']['statuses'])) {
+        $statuses = $payload['entry'][0]['changes'][0]['value']['statuses'] ?? [];
+        foreach ($statuses as $statusEvent) {
+            $wamid = $statusEvent['id'] ?? null;
+            $status = $statusEvent['status'] ?? null;
+            
+            if ($wamid && $status) {
+                // Update message status in cache for frontend display
+                WhatsAppStatusTracker::updateStatus($wamid, $status);
+                
+                Log::info('WhatsApp message status received', [
+                    'wamid' => $wamid,
+                    'status' => $status,
+                    'timestamp' => $statusEvent['timestamp'] ?? null,
+                ]);
+            }
+        }
         return response('OK', 200);
     }
 
