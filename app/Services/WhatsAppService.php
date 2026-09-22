@@ -6,6 +6,7 @@ use App\Models\Store;
 use App\Models\ProductImage;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use App\Services\WhatsAppStatusTracker;
 
 class WhatsAppService
 {
@@ -394,14 +395,14 @@ class WhatsAppService
      * @param string $imageUrl Full URL to the image (public accessible)
      * @param Store $store Store with WhatsApp credentials
      * @param string|null $caption Optional caption for the image
-     * @return bool True if image was sent successfully
+     * @return string|null WAMID (Meta's message ID) on success, null on failure
      */
     public static function sendWhatsAppImage(
         string $toNumber,
         string $imageUrl,
         Store $store,
         ?string $caption = null
-    ): bool {
+    ): ?string {
         try {
             $url = "https://graph.facebook.com/v20.0/{$store->wa_phone_number_id}/messages";
 
@@ -432,23 +433,26 @@ class WhatsAppService
                     'status' => $response->status(),
                     'error' => $response->json(),
                 ]);
-                return false;
+                return null;
             }
+
+            $wamid = data_get($response->json(), 'messages.0.id');
 
             Log::debug('WhatsApp image sent', [
                 'store_id' => $store->id,
                 'to' => $toNumber,
                 'image_url' => $imageUrl,
+                'wamid' => $wamid,
             ]);
 
-            return true;
+            return $wamid;
         } catch (\Exception $e) {
             Log::error('WhatsApp image send error', [
                 'store_id' => $store->id,
                 'to' => $toNumber,
                 'error' => $e->getMessage(),
             ]);
-            return false;
+            return null;
         }
     }
 
@@ -461,12 +465,17 @@ class WhatsAppService
      * @param string $responseText Raw AI response containing potential [IMG: id] tags
      * @param Store $store Store with WhatsApp credentials and products
      * @param string $customerNumber Customer's phone number to send images to
+     * @param int|null $dbMessageId If provided, the sent image's WAMID is tracked
+     *                              against this database message id (so its
+     *                              delivery status shows up instead of staying
+     *                              stuck as "pending")
      * @return string Cleaned response text without [IMG: ...] tags
      */
     public static function processAIResponse(
         string $responseText,
         Store $store,
-        string $customerNumber
+        string $customerNumber,
+        ?int $dbMessageId = null
     ): string {
         try {
             // Find all [IMG: id] tags
@@ -511,17 +520,22 @@ class WhatsAppService
                         ]);
 
                         // Send the image
-                        $imageSent = self::sendWhatsAppImage(
+                        $imageWamid = self::sendWhatsAppImage(
                             $customerNumber,
                             $image->public_url,
                             $store,
                             $productName
                         );
 
+                        if ($imageWamid && $dbMessageId) {
+                            WhatsAppStatusTracker::trackMessage($dbMessageId, $imageWamid);
+                        }
+
                         Log::info('Image send result', [
                             'store_id' => $store->id,
                             'image_id' => $imageId,
-                            'image_sent' => $imageSent,
+                            'image_sent' => $imageWamid !== null,
+                            'wamid' => $imageWamid,
                             'customer_number' => $customerNumber,
                         ]);
                     } else {
