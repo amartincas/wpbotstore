@@ -128,7 +128,7 @@
                     {{-- Messages --}}
                     <div id="chat-container" wire:poll.3s="getMessageStatuses" style="flex: 1; overflow-y: auto; padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem;">
                         @foreach ($messages as $message)
-                            <div style="display: flex; width: 100%; justify-content: {{ $message->role === 'user' ? 'flex-start' : 'flex-end' }};">
+                            <div wire:key="msg-{{ $message->id }}" style="display: flex; width: 100%; justify-content: {{ $message->role === 'user' ? 'flex-start' : 'flex-end' }};">
                                 <div style="display: flex; align-items: flex-end; gap: 0.3rem; max-width: 75%;">
                                     <div style="padding: 0.6rem 1rem; border-radius: 12px; background: {{ $message->role === 'user' ? 'white' : '#dcf8c6' }}; box-shadow: 0 1px 1px rgba(0,0,0,0.1);">
                                         <p style="font-size: 14px; margin: 0; word-wrap: break-word; white-space: pre-wrap; color: #111827;">{{ $message->content }}</p>

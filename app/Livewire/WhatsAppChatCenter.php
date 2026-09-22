@@ -10,8 +10,10 @@ use App\Services\WhatsAppService;
 use App\Services\WhatsAppStatusTracker;
 use Livewire\Attributes\On;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Filament\Notifications\Notification;
 use Livewire\Component;
 
@@ -30,10 +32,17 @@ class WhatsAppChatCenter extends Component
     public $whatsappTemplates = [];    // List templates
     public $messageStatuses = [];      // Message delivery statuses from cache
 
+    // Unique per page-load id, persisted across every Livewire request for this
+    // browser tab. Used to resolve the race between wire:poll and click requests
+    // (see setSelectedPhone()/render() below).
+    public string $pageToken = '';
+
     public function mount()
     {
+        $this->pageToken = (string) Str::uuid();
+
         $this->loadConversations();
-        
+
         // If superuser, load all stores for the filter dropdown
         if (Auth::user()?->is_super_admin) {
             $this->stores = Store::all();
@@ -42,10 +51,44 @@ class WhatsAppChatCenter extends Component
 
     public function render()
     {
+        // Livewire does not serialize concurrent requests for the same component:
+        // a wire:poll tick (list refresh every 10s, statuses every 3s) can be
+        // in flight at the same moment the user clicks a different conversation.
+        // Whichever HTTP response is processed LAST wins, so a slow poll response
+        // that was dispatched with the OLD selectedPhone can overwrite a click that
+        // already selected a NEW conversation — the chat then appears "stuck" on
+        // the previous conversation. The cache entry from selectionCacheKey() is
+        // the shared source of truth for "the conversation actually selected in
+        // this tab"; every response (poll or click) re-syncs to it before rendering, so they
+        // all converge on the same, most-recently-selected conversation regardless
+        // of network arrival order.
+        if ($this->pageToken !== '') {
+            $latestSelectedPhone = Cache::get($this->selectionCacheKey(), $this->selectedPhone);
+            if ($latestSelectedPhone !== $this->selectedPhone) {
+                $this->selectedPhone = $latestSelectedPhone;
+            }
+        }
+
         // Reload conversations on each render to prevent them from disappearing
         $this->loadConversations();
 
         return view('livewire.whats-app-chat-center');
+    }
+
+    /**
+     * Set the selected conversation and record it as the authoritative
+     * selection for this tab (see render()) so stale concurrent requests
+     * (polls dispatched before this selection) can self-correct.
+     */
+    private function setSelectedPhone(?string $phone): void
+    {
+        $this->selectedPhone = $phone;
+        Cache::put($this->selectionCacheKey(), $phone, now()->addMinutes(30));
+    }
+
+    private function selectionCacheKey(): string
+    {
+        return "whats_app_chat_center_selection:{$this->pageToken}";
     }
 
     /**
@@ -116,11 +159,17 @@ class WhatsAppChatCenter extends Component
                     ->orderBy('created_at', 'asc')
                     ->get();
                 
-                // Only update and dispatch scroll if the count changed
-                if (count($queryMessages) !== count($this->messages)) {
+                // Comparar por IDs, no solo por cantidad — dos conversaciones
+                // distintas pueden tener la misma cantidad de mensajes por
+                // coincidencia, y comparar solo el conteo dejaba pegados los
+                // mensajes de la conversación anterior al cambiar de chat.
+                $newIds = $queryMessages->pluck('id')->all();
+                $currentIds = collect($this->messages)->pluck('id')->all();
+
+                if ($newIds !== $currentIds) {
                     $this->messages = $queryMessages;
                     $this->dispatch('scroll-down');
-                    
+
                     Log::debug('loadConversations: Messages updated', [
                         'customer_phone' => $this->selectedPhone,
                         'message_count' => count($queryMessages),
@@ -146,7 +195,7 @@ class WhatsAppChatCenter extends Component
      */
     public function selectConversation(string $phone): void
     {
-        $this->selectedPhone = (string) $phone;
+        $this->setSelectedPhone((string) $phone);
         $this->loadConversations(); // Force message load
 
         // Fetch message statuses for this conversation
@@ -263,8 +312,15 @@ class WhatsAppChatCenter extends Component
             // 2. Send via WhatsApp API
             $store = Store::find($storeId);
             if ($store) {
-                $wamid = WhatsAppService::sendMessage($this->selectedPhone, $this->newMessage, $store);
-                
+                // Process [IMG:id] tags: sends product images and strips the tags from the text
+                $textToSend = WhatsAppService::processAIResponse($this->newMessage, $store, $this->selectedPhone);
+
+                // Only send a text message if something remains after stripping [IMG:...] tags
+                $wamid = null;
+                if (trim($textToSend) !== '') {
+                    $wamid = WhatsAppService::sendMessage($this->selectedPhone, $textToSend, $store);
+                }
+
                 // 3. Track message status if WAMID was returned
                 if ($wamid) {
                     WhatsAppStatusTracker::trackMessage($message->id, $wamid);
@@ -374,7 +430,7 @@ class WhatsAppChatCenter extends Component
         }
 
         $this->filterStoreId = (int) $value ?: null;
-        $this->selectedPhone = null;
+        $this->setSelectedPhone(null);
         $this->messages = [];
         $this->loadConversations();
         
@@ -488,7 +544,7 @@ class WhatsAppChatCenter extends Component
         ]);
 
         $this->selectedConversationId = $conversation->id;
-        $this->selectedPhone = $targetPhone;
+        $this->setSelectedPhone($targetPhone);
 
         $sent = WhatsAppService::sendTemplateMessage(
             to:           $targetPhone,
