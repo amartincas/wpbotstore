@@ -20,7 +20,9 @@ class MetaConversionsApiService
 
     public static function sendLeadEvent(Store $store, string $customerPhone, ?string $ctwaClid = null): void
     {
-        self::sendEvent($store, 'Lead', $customerPhone, [], $ctwaClid);
+        // Meta rejects "Lead" for action_source=business_messaging; the
+        // supported event name for this channel is "LeadSubmitted".
+        self::sendEvent($store, 'LeadSubmitted', $customerPhone, [], $ctwaClid);
     }
 
     public static function sendPurchaseEvent(
