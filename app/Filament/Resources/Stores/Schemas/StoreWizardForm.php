@@ -68,6 +68,26 @@ class StoreWizardForm
                     ->placeholder('eaa...')
                     ->columnSpanFull(),
 
+                // === CONVERSIONS API (META) ===
+                TextInput::make('meta_dataset_id')
+                    ->label('Meta Dataset ID')
+                    ->helperText('Conversions API dataset id for WhatsApp Business Messaging. Leave empty to disable CAPI for this store.')
+                    ->columnSpanFull(),
+
+                TextInput::make('meta_capi_access_token')
+                    ->label('Conversions API Access Token')
+                    ->password()
+                    ->revealable()
+                    ->helperText('Access token with whatsapp_business_management / whatsapp_business_manage_events permissions (encrypted)')
+                    ->columnSpanFull(),
+
+                TextInput::make('meta_capi_currency')
+                    ->label('Currency')
+                    ->placeholder('e.g. COP, USD')
+                    ->required(fn (Get $get) => filled($get('meta_dataset_id')))
+                    ->helperText('ISO currency code this store sells in. Required to send the Purchase conversion event — no default is assumed.')
+                    ->columnSpan(1),
+
                 // === AI PERSONA ===
                 Select::make('personality_type')
                     ->label('Persona Type')

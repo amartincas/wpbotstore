@@ -61,24 +61,37 @@ class MetaConversionsApiService
             return;
         }
 
+        // Without ctwa_clid, Meta has nothing to attribute the event to (the
+        // only other identifier, whatsapp_business_account_id, is the same for
+        // every conversation of this store) — sending it anyway would just add
+        // noise to the dataset with no ad-optimization value. This means
+        // conversations that didn't start from a Click-to-WhatsApp ad don't
+        // report events, which is expected: there's no ad to attribute to.
+        if (!$ctwaClid) {
+            Log::info('MetaConversionsApiService: event skipped, no ctwa_clid (conversation did not start from a Click-to-WhatsApp ad)', [
+                'store_id' => $store->id,
+                'event_name' => $eventName,
+                'customer_phone' => $customerPhone,
+            ]);
+            return;
+        }
+
         try {
             $url = "https://graph.facebook.com/" . self::API_VERSION . "/{$store->meta_dataset_id}/events";
 
-            $userData = [
-                'phone' => [hash('sha256', self::normalizePhone($customerPhone))],
-            ];
-
-            if ($ctwaClid) {
-                $userData['ctwa_clid'] = $ctwaClid;
-            }
-
+            // Per Meta's Conversions API for Business Messaging spec, WhatsApp
+            // events are matched via whatsapp_business_account_id + ctwa_clid,
+            // not a hashed customer phone (that's only for the website Pixel/CAPI).
             $payload = [
                 'data' => [[
                     'event_name' => $eventName,
                     'event_time' => now()->timestamp,
                     'action_source' => 'business_messaging',
                     'messaging_channel' => 'whatsapp',
-                    'user_data' => $userData,
+                    'user_data' => [
+                        'whatsapp_business_account_id' => $store->wa_business_account_id,
+                        'ctwa_clid' => $ctwaClid,
+                    ],
                     'custom_data' => $customData,
                 ]],
             ];
@@ -89,6 +102,7 @@ class MetaConversionsApiService
                 Log::warning('MetaConversionsApiService: event send failed', [
                     'store_id' => $store->id,
                     'event_name' => $eventName,
+                    'customer_phone' => $customerPhone,
                     'status' => $response->status(),
                     'error' => $response->json(),
                 ]);
@@ -98,20 +112,16 @@ class MetaConversionsApiService
             Log::info('MetaConversionsApiService: event sent', [
                 'store_id' => $store->id,
                 'event_name' => $eventName,
-                'has_ctwa_clid' => $ctwaClid !== null,
+                'customer_phone' => $customerPhone,
                 'response' => $response->json(),
             ]);
         } catch (\Exception $e) {
             Log::error('MetaConversionsApiService: event send error', [
                 'store_id' => $store->id,
                 'event_name' => $eventName,
+                'customer_phone' => $customerPhone,
                 'error' => $e->getMessage(),
             ]);
         }
-    }
-
-    private static function normalizePhone(string $phone): string
-    {
-        return preg_replace('/\D+/', '', $phone);
     }
 }
