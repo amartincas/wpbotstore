@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'customer_phone',
     'last_session_at',
     'current_product_id',
+    'ctwa_clid',
 ])]
 class Conversation extends Model
 {

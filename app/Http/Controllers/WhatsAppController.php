@@ -181,6 +181,16 @@ class WhatsAppController extends Controller
         ? (new ProductFinderService())->findProductByAdId($adId, $store->id)?->id
         : null;
 
+    // ctwa_clid es el click id que la Conversions API necesita para atribuir
+    // una conversión al anuncio que originó la conversación. Solo viene en el
+    // primer mensaje de la sesión de Click-to-WhatsApp, así que solo lo
+    // guardamos cuando está presente para no borrar uno ya guardado en
+    // mensajes de seguimiento que no traen referral.
+    $ctwaClid = $message['referral']['ctwa_clid'] ?? null;
+    if ($ctwaClid) {
+        $conversation->update(['ctwa_clid' => $ctwaClid]);
+    }
+
     // Dispatch job to process the message asynchronously
     ProcessWhatsAppMessage::dispatch(
         $store,

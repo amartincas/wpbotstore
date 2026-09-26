@@ -69,6 +69,21 @@ class StoreForm
                     ->required()
                     ->columnSpanFull()
                     ->helperText('Verify token for webhook setup'),
+                TextInput::make('meta_dataset_id')
+                    ->label('Meta Dataset ID')
+                    ->columnSpanFull()
+                    ->helperText('Conversions API dataset id, from Meta Events Manager. Leave empty to disable CAPI for this store.'),
+                TextInput::make('meta_capi_access_token')
+                    ->label('Conversions API Access Token')
+                    ->password()
+                    ->revealable()
+                    ->columnSpanFull()
+                    ->helperText('Access token generated in Meta Events Manager for this dataset (encrypted)'),
+                TextInput::make('meta_capi_currency')
+                    ->label('Currency')
+                    ->placeholder('e.g. COP, USD')
+                    ->required(fn (Get $get) => filled($get('meta_dataset_id')))
+                    ->helperText('ISO currency code this store sells in (e.g. COP, USD). Required to send the Purchase conversion event — no default is assumed, since different stores price in different currencies.'),
             ]);
     }
 }

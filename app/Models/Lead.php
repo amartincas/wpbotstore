@@ -9,12 +9,15 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable([
     'store_id',
+    'product_id',
     'customer_phone',
     'customer_name',
     'delivery_address_or_location',
     'product_service_name',
     'preferred_date_time',
     'summary',
+    'sale_value',
+    'ctwa_clid',
     'is_processed',
     'bot_active',
 ])]
@@ -27,6 +30,7 @@ class Lead extends Model
         return [
             'is_processed' => 'boolean',
             'bot_active' => 'boolean',
+            'sale_value' => 'decimal:2',
         ];
     }
 
@@ -36,6 +40,14 @@ class Lead extends Model
     public function store(): BelongsTo
     {
         return $this->belongsTo(Store::class);
+    }
+
+    /**
+     * Get the product this lead is for, if one was confidently linked.
+     */
+    public function product(): BelongsTo
+    {
+        return $this->belongsTo(Product::class);
     }
 
     /**

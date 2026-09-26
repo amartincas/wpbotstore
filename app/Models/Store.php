@@ -18,6 +18,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'wa_phone_number_id',
     'wa_business_account_id',
     'wa_verify_token',
+    'meta_dataset_id',
+    'meta_capi_access_token',
+    'meta_capi_currency',
 ])]
 class Store extends Model
 {
@@ -31,7 +34,16 @@ class Store extends Model
             'ai_api_key' => 'encrypted',
             'wa_access_token' => 'encrypted',
             'wa_verify_token' => 'encrypted',
+            'meta_capi_access_token' => 'encrypted',
         ];
+    }
+
+    /**
+     * Whether this store has Meta Conversions API credentials configured.
+     */
+    public function hasCapiConfigured(): bool
+    {
+        return filled($this->meta_dataset_id) && filled($this->meta_capi_access_token);
     }
 
     public function products(): HasMany

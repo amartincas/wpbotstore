@@ -12,6 +12,7 @@ use App\Services\AI\OpenAIService;
 use App\Services\WhatsAppService;
 use App\Services\WhatsAppStatusTracker;
 use App\Services\Inventory\ProductFinderService;
+use App\Services\MetaConversionsApiService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\Eloquent\Collection;
@@ -306,27 +307,51 @@ class ProcessWhatsAppMessage implements ShouldQueue
                 // keeps summarizing it ("Producto: ... Nombre: ... ¡Gracias por tu
                 // compra!") on unrelated follow-ups like "¿me avisas cuando llegue?" —
                 // and re-emits [LEAD_COMPLETE] each time, since from its perspective
-                // it's still describing a confirmed purchase. Without this check,
-                // every such follow-up created a brand new Lead row for the same order.
-                $recentDuplicateLead = Lead::where('store_id', $this->store->id)
+                // it's still describing a confirmed purchase. A time window is too
+                // fragile (follow-ups can come hours or days later), so instead we
+                // only allow ONE open (unprocessed) lead per customer at a time — a
+                // new one is only created after staff marks the previous as
+                // processed. Bot-control records (customer_name = 'Unknown', created
+                // by the Chat Center's bot on/off toggle) are excluded so they never
+                // block a real lead from being created.
+                $hasOpenLead = Lead::where('store_id', $this->store->id)
                     ->where('customer_phone', $this->from)
-                    ->where('created_at', '>=', now()->subHour())
+                    ->where('is_processed', false)
+                    ->where(function ($query) {
+                        $query->whereNull('customer_name')->orWhere('customer_name', '!=', 'Unknown');
+                    })
                     ->exists();
 
-                if ($recentDuplicateLead) {
-                    Log::warning('DUPLICATE_LEAD_SKIPPED: Ya existe un lead reciente para esta conversación', [
+                if ($hasOpenLead) {
+                    Log::warning('DUPLICATE_LEAD_SKIPPED: Ya existe un lead abierto para esta conversación', [
                         'store_id' => $this->store->id,
                         'customer_phone' => $this->from,
                     ]);
                 } else {
-                    Lead::create([
+                    // Resolve the sale value from the product currently linked to this
+                    // conversation (see getProductContext()), so Meta's "Purchase"
+                    // conversion event carries a real value without asking staff to
+                    // type anything. If no single product is confidently linked
+                    // (e.g. multi-item order), the lead is created without a value
+                    // and only the "Lead" event is sent.
+                    $conversation = Conversation::where('store_id', $this->store->id)
+                        ->where('customer_phone', $this->from)
+                        ->first();
+                    $product = $conversation?->current_product_id
+                        ? Product::find($conversation->current_product_id)
+                        : null;
+
+                    $lead = Lead::create([
                         'store_id' => $this->store->id,
+                        'product_id' => $product?->id,
                         'customer_phone' => $this->from,
                         'customer_name' => $leadData['customer_name'] ?? null,
                         'delivery_address_or_location' => $leadData['delivery_address_or_location'] ?? null,
                         'product_service_name' => $leadData['product_service_name'] ?? null,
                         'preferred_date_time' => $leadData['preferred_date_time'] ?? null,
                         'summary' => $messageToSend,
+                        'sale_value' => $product?->price,
+                        'ctwa_clid' => $conversation?->ctwa_clid,
                         'is_processed' => false,
                     ]);
 
@@ -335,8 +360,21 @@ class ProcessWhatsAppMessage implements ShouldQueue
                         'customer_phone' => $this->from,
                         'customer_name' => $leadData['customer_name'] ?? null,
                         'product_service_name' => $leadData['product_service_name'] ?? null,
+                        'sale_value' => $lead->sale_value,
                         'completion_method' => $hasLeadToken ? 'explicit_token' : 'heuristic_fallback',
                     ]);
+
+                    MetaConversionsApiService::sendLeadEvent($this->store, $this->from, $lead->ctwa_clid);
+
+                    if ($lead->sale_value !== null) {
+                        MetaConversionsApiService::sendPurchaseEvent(
+                            $this->store,
+                            $this->from,
+                            (float) $lead->sale_value,
+                            $this->store->meta_capi_currency,
+                            $lead->ctwa_clid
+                        );
+                    }
                 }
             }
 
