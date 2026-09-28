@@ -204,7 +204,7 @@ class ProductFinderService
         }
 
         return Product::where('store_id', $storeId)
-            ->get(['id', 'name', 'store_id'])
+            ->get(['id', 'name', 'store_id', 'price'])
             ->first(fn (Product $product) => filled($product->name) && mb_stripos($text, $product->name) !== false);
     }
 
