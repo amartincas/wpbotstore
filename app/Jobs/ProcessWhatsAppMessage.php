@@ -341,6 +341,18 @@ class ProcessWhatsAppMessage implements ShouldQueue
                         ? Product::find($conversation->current_product_id)
                         : null;
 
+                    // Fallback: current_product_id isn't always persisted in time for
+                    // this exact moment (observed in production — the sticky-product
+                    // update can lag behind a fast-moving conversation). The AI-based
+                    // extraction above (product_service_name) has proven reliable at
+                    // naming the right product even when that happens, so match it
+                    // against the catalog the same way ProductFinderService already
+                    // matches product names mentioned in a message.
+                    if (!$product && !empty($leadData['product_service_name'])) {
+                        $product = (new ProductFinderService())
+                            ->findProductMentionedInMessage($leadData['product_service_name'], $this->store->id);
+                    }
+
                     $lead = Lead::create([
                         'store_id' => $this->store->id,
                         'product_id' => $product?->id,

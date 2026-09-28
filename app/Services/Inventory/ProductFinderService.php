@@ -195,7 +195,7 @@ class ProductFinderService
      * @param int $storeId
      * @return Product|null
      */
-    private function findProductMentionedInMessage(string $message, int $storeId): ?Product
+    public function findProductMentionedInMessage(string $message, int $storeId): ?Product
     {
         $text = trim($message);
 
