@@ -15,15 +15,23 @@ use Illuminate\Console\Command;
  * created after the observer went live don't need this — they're already
  * marked via meta_capi_sent_at at creation time.
  *
- * A lead without a stored ctwa_clid can't be backfilled: that value is only
- * ever exposed by Meta on the first inbound message of a Click-to-WhatsApp
- * conversation, so if it wasn't captured then, it's gone for good.
+ * Two attribution paths, depending on what data survived:
+ * - Leads with a stored ctwa_clid: sent via the business_messaging path,
+ *   exactly like a live conversation would be.
+ * - Leads without one (created before ctwa_clid capture existed, but that
+ *   still came from a real ad according to the business): sent via the
+ *   physical_store/offline path instead, letting Meta match the person by
+ *   phone number rather than by click id. Meta documents offline events as
+ *   accepted up to ~62 days after they happened — older ones may still be
+ *   accepted by the API but are unlikely to be used for attribution.
  */
 class BackfillMetaConversions extends Command
 {
     protected $signature = 'meta:backfill-conversions {--dry-run : List what would be sent without actually sending it}';
 
     protected $description = 'Send existing leads that predate the CAPI integration to Meta\'s Conversions API';
+
+    private const OFFLINE_EVENT_MAX_AGE_DAYS = 62;
 
     public function handle(): int
     {
@@ -36,8 +44,9 @@ class BackfillMetaConversions extends Command
 
         $this->info("Leads pendientes de procesar: {$leads->count()}");
 
-        $sent = 0;
-        $skippedNoCtwaClid = 0;
+        $sentBusinessMessaging = 0;
+        $sentOffline = 0;
+        $skippedTooOld = 0;
         $skippedNoStore = 0;
 
         foreach ($leads as $lead) {
@@ -46,20 +55,9 @@ class BackfillMetaConversions extends Command
                 continue;
             }
 
-            // Older leads created before we started copying ctwa_clid onto the
-            // lead itself may still have it on the conversation record.
             $ctwaClid = $lead->ctwa_clid ?? Conversation::where('store_id', $lead->store_id)
                 ->where('customer_phone', $lead->customer_phone)
                 ->value('ctwa_clid');
-
-            if (!$ctwaClid) {
-                $skippedNoCtwaClid++;
-                $this->line("  [sin ctwa_clid] lead #{$lead->id} ({$lead->customer_phone}) — no se puede enviar");
-                if (!$dryRun) {
-                    $lead->update(['meta_capi_sent_at' => now()]);
-                }
-                continue;
-            }
 
             // Same fallback chain used at live creation time: prefer the
             // linked product's price, else try to match product_service_name
@@ -74,35 +72,55 @@ class BackfillMetaConversions extends Command
                     ?->price;
             }
 
-            $this->line("  [enviando] lead #{$lead->id} ({$lead->customer_phone}), sale_value=" . ($salePrice ?? 'null'));
+            if ($ctwaClid) {
+                $this->line("  [business_messaging] lead #{$lead->id} ({$lead->customer_phone}), sale_value=" . ($salePrice ?? 'null'));
 
-            if (!$dryRun) {
-                MetaConversionsApiService::sendLeadEvent(
-                    $lead->store,
-                    $lead->customer_phone,
-                    $ctwaClid,
-                    $lead->created_at
-                );
+                if (!$dryRun) {
+                    MetaConversionsApiService::sendLeadEvent($lead->store, $lead->customer_phone, $ctwaClid, $lead->created_at);
 
-                if ($salePrice !== null) {
-                    MetaConversionsApiService::sendPurchaseEvent(
-                        $lead->store,
-                        $lead->customer_phone,
-                        (float) $salePrice,
-                        $lead->store->meta_capi_currency,
-                        $ctwaClid,
-                        $lead->created_at
-                    );
+                    if ($salePrice !== null) {
+                        MetaConversionsApiService::sendPurchaseEvent(
+                            $lead->store, $lead->customer_phone, (float) $salePrice,
+                            $lead->store->meta_capi_currency, $ctwaClid, $lead->created_at
+                        );
+                    }
                 }
 
-                $lead->update(['meta_capi_sent_at' => now()]);
+                $sentBusinessMessaging++;
+            } else {
+                $ageInDays = $lead->created_at->diffInDays(now());
+                $tooOld = $ageInDays > self::OFFLINE_EVENT_MAX_AGE_DAYS;
+                $ageNote = $tooOld ? " (¡{$ageInDays} días, Meta pudo rechazarlo o no usarlo!)" : " ({$ageInDays} días)";
+
+                $this->line("  [offline/phone] lead #{$lead->id} ({$lead->customer_phone}), sale_value=" . ($salePrice ?? 'null') . $ageNote);
+
+                if ($tooOld) {
+                    $skippedTooOld++;
+                }
+
+                if (!$dryRun) {
+                    MetaConversionsApiService::sendOfflineLeadEvent($lead->store, $lead->customer_phone, $lead->created_at);
+
+                    if ($salePrice !== null) {
+                        MetaConversionsApiService::sendOfflinePurchaseEvent(
+                            $lead->store, $lead->customer_phone, (float) $salePrice,
+                            $lead->store->meta_capi_currency, $lead->created_at
+                        );
+                    }
+                }
+
+                $sentOffline++;
             }
 
-            $sent++;
+            if (!$dryRun) {
+                $lead->update(['meta_capi_sent_at' => now()]);
+            }
         }
 
         $this->newLine();
-        $this->info("Enviados: {$sent} | Sin ctwa_clid (no se pueden enviar): {$skippedNoCtwaClid} | Sin tienda: {$skippedNoStore}");
+        $this->info("Enviados vía business_messaging (ctwa_clid): {$sentBusinessMessaging}");
+        $this->info("Enviados vía offline/telefono (sin ctwa_clid): {$sentOffline}, de los cuales {$skippedTooOld} tienen más de " . self::OFFLINE_EVENT_MAX_AGE_DAYS . " días");
+        $this->info("Sin tienda: {$skippedNoStore}");
 
         if ($dryRun) {
             $this->comment('Esto fue un dry-run — no se envió ni se marcó nada. Corre sin --dry-run para procesarlos de verdad.');
