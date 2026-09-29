@@ -3,8 +3,10 @@
 namespace App\Filament\Resources\Leads\Pages;
 
 use App\Filament\Resources\Leads\LeadResource;
+use App\Models\Conversation;
 use Filament\Actions\Action;
 use Filament\Resources\Pages\CreateRecord;
+use Illuminate\Support\Facades\Auth;
 
 class CreateLead extends CreateRecord
 {
@@ -13,5 +15,29 @@ class CreateLead extends CreateRecord
     protected function getRedirectUrl(): string
     {
         return $this->getResource()::getUrl('index');
+    }
+
+    /**
+     * A lead created manually here still represents a real customer, and if
+     * that customer originally reached out through a Click-to-WhatsApp ad,
+     * their conversation already has the ctwa_clid — attach it so the
+     * LeadObserver can still report this to Meta's Conversions API instead
+     * of silently skipping it for lack of ad attribution.
+     */
+    protected function mutateFormDataBeforeCreate(array $data): array
+    {
+        $storeId = $data['store_id'] ?? Auth::user()?->store_id;
+
+        if ($storeId && !empty($data['customer_phone'])) {
+            $ctwaClid = Conversation::where('store_id', $storeId)
+                ->where('customer_phone', $data['customer_phone'])
+                ->value('ctwa_clid');
+
+            if ($ctwaClid) {
+                $data['ctwa_clid'] = $ctwaClid;
+            }
+        }
+
+        return $data;
     }
 }

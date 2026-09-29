@@ -11,6 +11,8 @@ use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
 use Livewire\Livewire;
 use App\Services\AI\GeminiService;
+use App\Models\Lead;
+use App\Observers\LeadObserver;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -38,6 +40,9 @@ class AppServiceProvider extends ServiceProvider
 
         // Register Livewire components
         Livewire::component('whats-app-chat-center', \App\Livewire\WhatsAppChatCenter::class);
+
+        // Sends every new Lead (bot, manual, backfill) to Meta's Conversions API
+        Lead::observe(LeadObserver::class);
     }
 
     /**

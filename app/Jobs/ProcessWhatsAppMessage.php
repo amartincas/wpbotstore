@@ -12,7 +12,6 @@ use App\Services\AI\OpenAIService;
 use App\Services\WhatsAppService;
 use App\Services\WhatsAppStatusTracker;
 use App\Services\Inventory\ProductFinderService;
-use App\Services\MetaConversionsApiService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\Eloquent\Collection;
@@ -376,17 +375,10 @@ class ProcessWhatsAppMessage implements ShouldQueue
                         'completion_method' => $hasLeadToken ? 'explicit_token' : 'heuristic_fallback',
                     ]);
 
-                    MetaConversionsApiService::sendLeadEvent($this->store, $this->from, $lead->ctwa_clid);
-
-                    if ($lead->sale_value !== null) {
-                        MetaConversionsApiService::sendPurchaseEvent(
-                            $this->store,
-                            $this->from,
-                            (float) $lead->sale_value,
-                            $this->store->meta_capi_currency,
-                            $lead->ctwa_clid
-                        );
-                    }
+                    // Sending to Meta's Conversions API happens in LeadObserver,
+                    // triggered automatically on Lead::create() above — this way
+                    // every lead gets sent regardless of who/what created it
+                    // (bot, manual Chat Center template, Filament, backfill).
                 }
             }
 

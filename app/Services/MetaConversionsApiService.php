@@ -18,11 +18,15 @@ class MetaConversionsApiService
 {
     private const API_VERSION = 'v20.0';
 
-    public static function sendLeadEvent(Store $store, string $customerPhone, ?string $ctwaClid = null): void
-    {
+    public static function sendLeadEvent(
+        Store $store,
+        string $customerPhone,
+        ?string $ctwaClid = null,
+        ?\DateTimeInterface $eventTime = null
+    ): void {
         // Meta rejects "Lead" for action_source=business_messaging; the
         // supported event name for this channel is "LeadSubmitted".
-        self::sendEvent($store, 'LeadSubmitted', $customerPhone, [], $ctwaClid);
+        self::sendEvent($store, 'LeadSubmitted', $customerPhone, [], $ctwaClid, $eventTime);
     }
 
     public static function sendPurchaseEvent(
@@ -30,7 +34,8 @@ class MetaConversionsApiService
         string $customerPhone,
         float $value,
         ?string $currency,
-        ?string $ctwaClid = null
+        ?string $ctwaClid = null,
+        ?\DateTimeInterface $eventTime = null
     ): void {
         // No currency fallback on purpose: stores price in different currencies
         // (COP, USD, ...), so silently assuming one would report the wrong value
@@ -45,7 +50,7 @@ class MetaConversionsApiService
         self::sendEvent($store, 'Purchase', $customerPhone, [
             'value' => $value,
             'currency' => $currency,
-        ], $ctwaClid);
+        ], $ctwaClid, $eventTime);
     }
 
     private static function sendEvent(
@@ -53,7 +58,8 @@ class MetaConversionsApiService
         string $eventName,
         string $customerPhone,
         array $customData,
-        ?string $ctwaClid
+        ?string $ctwaClid,
+        ?\DateTimeInterface $eventTime = null
     ): void {
         if (!$store->hasCapiConfigured()) {
             Log::info('MetaConversionsApiService: skipped, store has no CAPI credentials', [
@@ -87,7 +93,7 @@ class MetaConversionsApiService
             $payload = [
                 'data' => [[
                     'event_name' => $eventName,
-                    'event_time' => now()->timestamp,
+                    'event_time' => ($eventTime ?? now())->getTimestamp(),
                     'action_source' => 'business_messaging',
                     'messaging_channel' => 'whatsapp',
                     'user_data' => [

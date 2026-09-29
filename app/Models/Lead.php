@@ -18,6 +18,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'summary',
     'sale_value',
     'ctwa_clid',
+    'meta_capi_sent_at',
     'is_processed',
     'bot_active',
 ])]
@@ -31,6 +32,7 @@ class Lead extends Model
             'is_processed' => 'boolean',
             'bot_active' => 'boolean',
             'sale_value' => 'decimal:2',
+            'meta_capi_sent_at' => 'datetime',
         ];
     }
 
