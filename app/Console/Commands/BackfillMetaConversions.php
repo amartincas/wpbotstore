@@ -27,7 +27,7 @@ use Illuminate\Console\Command;
  */
 class BackfillMetaConversions extends Command
 {
-    protected $signature = 'meta:backfill-conversions {--dry-run : List what would be sent without actually sending it}';
+    protected $signature = 'meta:backfill-conversions {--store= : Store ID to backfill (required — this is a multi-tenant app, never run across all stores at once)} {--dry-run : List what would be sent without actually sending it}';
 
     protected $description = 'Send existing leads that predate the CAPI integration to Meta\'s Conversions API';
 
@@ -36,8 +36,15 @@ class BackfillMetaConversions extends Command
     public function handle(): int
     {
         $dryRun = (bool) $this->option('dry-run');
+        $storeId = $this->option('store');
+
+        if (!$storeId) {
+            $this->error('Falta --store=ID. Cada tienda de la plataforma tiene su propia moneda y catálogo — corre esto una tienda a la vez.');
+            return self::FAILURE;
+        }
 
         $leads = Lead::whereNull('meta_capi_sent_at')
+            ->where('store_id', $storeId)
             ->where('customer_name', '!=', 'Unknown')
             ->with('store')
             ->get();
