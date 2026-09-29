@@ -49,4 +49,16 @@ class LeadObserver
         // reprocessing leads on every run, not "successfully delivered".
         $lead->update(['meta_capi_sent_at' => now()]);
     }
+
+    /**
+     * A returned order is a lost sale for this business (confirmed with the
+     * store owner — it does not get re-shipped), so closing it out as
+     * processed is automatic instead of requiring a separate manual step.
+     */
+    public function saving(Lead $lead): void
+    {
+        if ($lead->isDirty('order_status') && $lead->order_status === 'devuelto') {
+            $lead->is_processed = true;
+        }
+    }
 }

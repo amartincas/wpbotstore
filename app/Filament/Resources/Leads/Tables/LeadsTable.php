@@ -2,14 +2,17 @@
 
 namespace App\Filament\Resources\Leads\Tables;
 
+use App\Models\Lead;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Columns\ToggleColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 
 class LeadsTable
@@ -17,6 +20,12 @@ class LeadsTable
     public static function configure(Table $table): Table
     {
         return $table
+            // 'Unknown' rows are bot on/off toggle control records and
+            // proactive-template placeholders (see WhatsAppChatCenter.php) —
+            // not real leads, so they shouldn't clutter this list.
+            ->modifyQueryUsing(fn (Builder $query) => $query->where(
+                fn (Builder $q) => $q->whereNull('customer_name')->orWhere('customer_name', '!=', 'Unknown')
+            ))
             ->columns([
                 TextColumn::make('store.name')
                     ->label('Store Name')
@@ -42,6 +51,26 @@ class LeadsTable
                 TextColumn::make('created_at')
                     ->since()
                     ->sortable(),
+                TextColumn::make('order_status')
+                    ->label('Order Status')
+                    ->badge()
+                    ->formatStateUsing(fn (?string $state) => $state ? (Lead::ORDER_STATUSES[$state] ?? $state) : '—')
+                    ->color(fn (?string $state) => match ($state) {
+                        'confirmado' => 'info',
+                        'enviado' => 'warning',
+                        'entregado' => 'success',
+                        'devuelto' => 'danger',
+                        default => 'gray',
+                    })
+                    ->sortable(),
+                IconColumn::make('needs_address_review')
+                    ->label('Address')
+                    ->boolean()
+                    ->trueIcon('heroicon-o-exclamation-triangle')
+                    ->falseIcon('heroicon-o-check-circle')
+                    ->trueColor('warning')
+                    ->falseColor('success')
+                    ->tooltip(fn (bool $state) => $state ? 'Falta ciudad/región — confirmar con el cliente' : 'Dirección completa'),
                 ToggleColumn::make('is_processed')
                     ->label('Processed')
                     ->sortable(),
@@ -55,6 +84,9 @@ class LeadsTable
                 SelectFilter::make('store_id')
                     ->relationship('store', 'name')
                     ->label('Store'),
+                SelectFilter::make('order_status')
+                    ->label('Order Status')
+                    ->options(Lead::ORDER_STATUSES),
             ])
             ->defaultSort('created_at', 'desc')
             ->recordActions([

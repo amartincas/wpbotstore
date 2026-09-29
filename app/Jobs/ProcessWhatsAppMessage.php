@@ -260,6 +260,29 @@ class ProcessWhatsAppMessage implements ShouldQueue
                 ]);
             }
             
+            // 3b. If this customer already has an active order, tell the AI
+            // explicitly — it only sees the last 10 messages of history, so a
+            // conversation that continues past that window (follow-up about
+            // delivery, days later) would otherwise look like a brand new
+            // customer and the bot would restart the sales/data-collection
+            // flow instead of just acknowledging the follow-up.
+            $openOrder = Lead::where('store_id', $this->store->id)
+                ->where('customer_phone', $this->from)
+                ->whereIn('order_status', ['confirmado', 'enviado'])
+                ->latest()
+                ->first();
+
+            if ($openOrder) {
+                $systemPrompt .= "\n\n### PEDIDO EXISTENTE DE ESTE CLIENTE:\n";
+                $systemPrompt .= "Producto: {$openOrder->product_service_name}\n";
+                $systemPrompt .= "Estado: {$openOrder->order_status}";
+                if ($openOrder->tracking_number) {
+                    $systemPrompt .= " (guía: {$openOrder->tracking_number}, transportadora: {$openOrder->carrier})";
+                }
+                $systemPrompt .= "\n";
+                $systemPrompt .= "Si el cliente pregunta o da instrucciones sobre este pedido, NO reinicies el proceso de toma de pedido ni vuelvas a pedir sus datos — ya los tienes. Solo registra la instrucción y confirma que se tendrá en cuenta.\n";
+            }
+
             // 4. Append system metadata (timestamps and completion signal)
             $systemPrompt .= "\n\n### SYSTEM METADATA:\n";
             $systemPrompt .= "Current Date/Time: " . now()->format('Y-m-d H:i:s') . "\n";
@@ -352,6 +375,14 @@ class ProcessWhatsAppMessage implements ShouldQueue
                             ->findProductMentionedInMessage($leadData['product_service_name'], $this->store->id);
                     }
 
+                    // Semantic completeness check on the delivery address: does
+                    // not block the sale, just flags it for staff follow-up
+                    // when the AI-collected address has no city/region at all
+                    // (this has been observed slipping through in production —
+                    // the sales-flow AI doesn't always catch its own gap).
+                    $needsAddressReview = !empty($leadData['delivery_address_or_location'])
+                        && !$this->addressHasCityAndRegion($leadData['delivery_address_or_location']);
+
                     $lead = Lead::create([
                         'store_id' => $this->store->id,
                         'product_id' => $product?->id,
@@ -363,6 +394,8 @@ class ProcessWhatsAppMessage implements ShouldQueue
                         'summary' => $messageToSend,
                         'sale_value' => $product?->price,
                         'ctwa_clid' => $conversation?->ctwa_clid,
+                        'order_status' => 'confirmado',
+                        'needs_address_review' => $needsAddressReview,
                         'is_processed' => false,
                     ]);
 
@@ -372,6 +405,7 @@ class ProcessWhatsAppMessage implements ShouldQueue
                         'customer_name' => $leadData['customer_name'] ?? null,
                         'product_service_name' => $leadData['product_service_name'] ?? null,
                         'sale_value' => $lead->sale_value,
+                        'needs_address_review' => $needsAddressReview,
                         'completion_method' => $hasLeadToken ? 'explicit_token' : 'heuristic_fallback',
                     ]);
 
@@ -903,6 +937,42 @@ PROMPT;
         }
 
         return $leadData;
+    }
+
+    /**
+     * Focused, narrow yes/no check on whether a delivery address includes an
+     * identifiable city and region (department/province/state — whatever the
+     * country calls it). Deliberately not a hardcoded list of Colombian
+     * departments or Ecuadorian provinces: this app serves stores in
+     * different countries, and a single-purpose classification question
+     * generalizes across all of them without needing per-country maintenance.
+     *
+     * A narrow, single-purpose question like this is far more reliable for
+     * the AI to get right than remembering a data-completeness rule buried
+     * in the middle of a long, multi-step sales system_prompt.
+     */
+    private function addressHasCityAndRegion(string $address): bool
+    {
+        try {
+            $aiEngine = AIServiceFactory::make($this->store);
+            $response = $aiEngine->getResponse(
+                'Analiza la dirección',
+                "Analiza este texto de dirección de entrega:\n\n\"{$address}\"\n\n¿Incluye una ciudad Y una región administrativa identificable (departamento, provincia, estado, o equivalente según el país)? Responde ÚNICAMENTE con la palabra \"si\" o \"no\", sin nada más.",
+                []
+            );
+
+            $normalized = mb_strtolower(trim($response));
+
+            return str_starts_with($normalized, 'si') || str_starts_with($normalized, 'sí');
+        } catch (\Exception $e) {
+            Log::warning('addressHasCityAndRegion: AI check failed, assuming address is complete to avoid false alarms', [
+                'store_id' => $this->store->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            // Fail open: an API error here shouldn't flag every lead for review.
+            return true;
+        }
     }
 
     /**

@@ -21,10 +21,25 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'meta_capi_sent_at',
     'is_processed',
     'bot_active',
+    'status',
+    'order_status',
+    'tracking_number',
+    'carrier',
+    'needs_address_review',
 ])]
 class Lead extends Model
 {
     use HasFactory;
+
+    /**
+     * Order fulfillment lifecycle values for `order_status`.
+     */
+    public const ORDER_STATUSES = [
+        'confirmado' => 'Confirmado',
+        'enviado' => 'Enviado',
+        'entregado' => 'Entregado',
+        'devuelto' => 'Devuelto',
+    ];
 
     protected function casts(): array
     {
@@ -33,6 +48,7 @@ class Lead extends Model
             'bot_active' => 'boolean',
             'sale_value' => 'decimal:2',
             'meta_capi_sent_at' => 'datetime',
+            'needs_address_review' => 'boolean',
         ];
     }
 

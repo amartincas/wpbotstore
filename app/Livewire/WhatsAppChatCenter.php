@@ -589,6 +589,27 @@ class WhatsAppChatCenter extends Component
                 $lead->update(['status' => 'waiting_customer', 'bot_active' => true]);
             }
 
+            // Shipping-notification templates for this store are built with
+            // "Guía"/"Transportadora" fields (see parameters_map on the
+            // template) — reusing that existing convention lets us detect
+            // "this send is a shipment notification" and record the order's
+            // tracking info automatically, with no new template config.
+            if ($lead) {
+                $guiaPosition = array_search('Guía', $parametersMap, true);
+
+                if ($guiaPosition !== false) {
+                    $transportadoraPosition = array_search('Transportadora', $parametersMap, true);
+                    $trackingIdx = (int) $guiaPosition - 1;
+                    $carrierIdx = $transportadoraPosition !== false ? (int) $transportadoraPosition - 1 : null;
+
+                    $lead->update([
+                        'order_status' => 'enviado',
+                        'tracking_number' => $resolvedValues[$trackingIdx] ?? null,
+                        'carrier' => $carrierIdx !== null ? ($resolvedValues[$carrierIdx] ?? null) : $lead->carrier,
+                    ]);
+                }
+            }
+
             $this->selectConversation($targetPhone);
         } else {
             Notification::make()

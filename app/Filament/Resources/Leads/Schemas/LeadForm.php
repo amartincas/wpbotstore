@@ -2,7 +2,9 @@
 
 namespace App\Filament\Resources\Leads\Schemas;
 
+use App\Models\Lead;
 use Filament\Forms\Components\Placeholder;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -38,6 +40,21 @@ class LeadForm
                     ->label('Order Summary')
                     ->rows(4)
                     ->required()
+                    ->columnSpanFull(),
+                Select::make('order_status')
+                    ->label('Order Status')
+                    ->options(Lead::ORDER_STATUSES)
+                    ->helperText('Confirmado/Enviado se marcan solos; marca Entregado o Devuelto manualmente cuando corresponda.')
+                    ->columnSpan(2),
+                TextInput::make('tracking_number')
+                    ->label('Tracking Number')
+                    ->columnSpan(1),
+                TextInput::make('carrier')
+                    ->label('Carrier')
+                    ->columnSpan(1),
+                Toggle::make('needs_address_review')
+                    ->label('Needs Address Review')
+                    ->helperText('Flagged automatically when the delivery address seems to be missing a city/region.')
                     ->columnSpanFull(),
                 Toggle::make('is_processed')
                     ->label('Mark as Processed')
