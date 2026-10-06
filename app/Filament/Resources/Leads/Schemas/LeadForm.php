@@ -42,6 +42,11 @@ class LeadForm
                 TextInput::make('product_service_name')
                     ->label('Product / Service Name')
                     ->columnSpan(2),
+                TextInput::make('sale_value')
+                    ->label('Sale Value')
+                    ->numeric()
+                    ->helperText('Se resuelve solo del catálogo si coincide con "Product / Service Name" — ajústalo aquí si es distinto (precio negociado, varios productos, etc.).')
+                    ->columnSpan(2),
                 TextInput::make('preferred_date_time')
                     ->label('Preferred Date & Time')
                     ->hint('For services: preferred booking date/time')
