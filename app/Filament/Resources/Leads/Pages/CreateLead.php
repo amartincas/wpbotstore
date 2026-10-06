@@ -28,6 +28,12 @@ class CreateLead extends CreateRecord
     {
         $storeId = $data['store_id'] ?? Auth::user()?->store_id;
 
+        // store_id isn't a field on the form (see LeadForm.php — it's only
+        // shown as a select for super admins), so without this it never made
+        // it into the insert at all and the create failed with a SQL error
+        // ("Field 'store_id' doesn't have a default value").
+        $data['store_id'] = $storeId;
+
         if ($storeId && !empty($data['customer_phone'])) {
             $ctwaClid = Conversation::where('store_id', $storeId)
                 ->where('customer_phone', $data['customer_phone'])

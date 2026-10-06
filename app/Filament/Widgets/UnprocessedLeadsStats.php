@@ -2,6 +2,7 @@
 
 namespace App\Filament\Widgets;
 
+use App\Filament\Resources\Leads\LeadResource;
 use App\Models\Lead;
 use Filament\Widgets\StatsOverviewWidget as BaseWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
@@ -25,7 +26,9 @@ class UnprocessedLeadsStats extends BaseWidget
                 ->description('Leads awaiting follow-up')
                 ->descriptionIcon('heroicon-m-arrow-trending-up')
                 ->color('warning')
-                ->url('/admin/leads?tableFilters%5Bis_processed%5D%5Bvalue%5D=false'),
+                ->url(LeadResource::getUrl('index', [
+                    'tableFilters' => ['is_processed' => ['value' => false]],
+                ])),
 
             Stat::make('Processed Leads', $processedCount)
                 ->description('Successfully handled leads')

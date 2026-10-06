@@ -9,6 +9,7 @@ use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Schema;
+use Illuminate\Support\Facades\Auth;
 
 class LeadForm
 {
@@ -16,6 +17,15 @@ class LeadForm
     {
         return $schema
             ->schema([
+                // Regular users get their store_id from CreateLead's
+                // mutateFormDataBeforeCreate(); super admins have no store of
+                // their own, so they need to pick one explicitly here.
+                Select::make('store_id')
+                    ->label('Store')
+                    ->relationship('store', 'name')
+                    ->required()
+                    ->visible(Auth::user()?->is_super_admin)
+                    ->columnSpanFull(),
                 TextInput::make('customer_name')
                     ->label('Full Name')
                     ->required()
