@@ -13,7 +13,17 @@ class WhatsAppMessage extends Model
         'customer_phone',
         'role',
         'content',
+        'wamid',
+        'status',
+        'status_updated_at',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'status_updated_at' => 'datetime',
+        ];
+    }
 
     /**
      * Get the store that owns this message.
