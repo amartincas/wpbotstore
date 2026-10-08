@@ -88,6 +88,12 @@ class StoreWizardForm
                     ->helperText('ISO currency code this store sells in. Required to send the Purchase conversion event — no default is assumed.')
                     ->columnSpan(1),
 
+                TextInput::make('alert_phone')
+                    ->label('Admin Alert Phone')
+                    ->placeholder('e.g. 573001234567')
+                    ->helperText('WhatsApp number (with country code, no "+") that receives a message whenever a new lead is created for this store. Leave empty to disable the alert.')
+                    ->columnSpanFull(),
+
                 // === AI PERSONA ===
                 Select::make('personality_type')
                     ->label('Persona Type')
