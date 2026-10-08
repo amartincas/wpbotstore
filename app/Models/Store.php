@@ -21,6 +21,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'meta_dataset_id',
     'meta_capi_access_token',
     'meta_capi_currency',
+    'alert_phone',
 ])]
 class Store extends Model
 {

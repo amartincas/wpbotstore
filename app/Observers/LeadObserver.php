@@ -3,6 +3,7 @@
 namespace App\Observers;
 
 use App\Models\Lead;
+use App\Services\LeadAlertService;
 use App\Services\MetaConversionsApiService;
 
 /**
@@ -24,6 +25,8 @@ class LeadObserver
         if ($lead->customer_name === 'Unknown') {
             return;
         }
+
+        LeadAlertService::notify($lead);
 
         MetaConversionsApiService::sendLeadEvent(
             $lead->store,

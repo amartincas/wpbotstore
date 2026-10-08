@@ -84,6 +84,11 @@ class StoreForm
                     ->placeholder('e.g. COP, USD')
                     ->required(fn (Get $get) => filled($get('meta_dataset_id')))
                     ->helperText('ISO currency code this store sells in (e.g. COP, USD). Required to send the Purchase conversion event — no default is assumed, since different stores price in different currencies.'),
+                TextInput::make('alert_phone')
+                    ->label('Admin Alert Phone')
+                    ->placeholder('e.g. 573001234567')
+                    ->columnSpanFull()
+                    ->helperText('WhatsApp number (with country code, no "+") that receives a message whenever a new lead is created for this store. Leave empty to disable the alert.'),
             ]);
     }
 }

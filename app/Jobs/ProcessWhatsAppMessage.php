@@ -383,6 +383,19 @@ class ProcessWhatsAppMessage implements ShouldQueue
                     $needsAddressReview = !empty($leadData['delivery_address_or_location'])
                         && !$this->addressHasCityAndRegion($leadData['delivery_address_or_location']);
 
+                    // The catalog's single-unit price is only correct when the
+                    // sale was exactly 1 unit of 1 product at list price. It's
+                    // wrong for: multiple units ("2 sets" = 2x price), combos/
+                    // accumulated multi-item orders (a laundry-service store
+                    // with several garment types), or a manually negotiated
+                    // price. The AI's own confirmation message to the customer
+                    // already states the real total it agreed on — extracting
+                    // that is more reliable than the catalog lookup, so it's
+                    // tried first; the catalog price remains the fallback for
+                    // when extraction can't find a clear number (fail open,
+                    // same pattern as addressHasCityAndRegion()).
+                    $saleValue = $this->extractConfirmedTotal($messageToSend) ?? $product?->price;
+
                     $lead = Lead::create([
                         'store_id' => $this->store->id,
                         'product_id' => $product?->id,
@@ -392,7 +405,7 @@ class ProcessWhatsAppMessage implements ShouldQueue
                         'product_service_name' => $leadData['product_service_name'] ?? null,
                         'preferred_date_time' => $leadData['preferred_date_time'] ?? null,
                         'summary' => $messageToSend,
-                        'sale_value' => $product?->price,
+                        'sale_value' => $saleValue,
                         'ctwa_clid' => $conversation?->ctwa_clid,
                         'order_status' => 'confirmado',
                         'needs_address_review' => $needsAddressReview,
@@ -972,6 +985,46 @@ PROMPT;
 
             // Fail open: an API error here shouldn't flag every lead for review.
             return true;
+        }
+    }
+
+    /**
+     * Extracts the final total the customer actually agreed to pay, from the
+     * AI's own confirmation message — covers multiple units, combos/
+     * accumulated multi-item orders, and manually negotiated prices, none of
+     * which the catalog's single-unit price reflects correctly. Returns null
+     * (not a guess) when no clear total is stated, so the caller can fall
+     * back to the catalog price instead of recording a wrong value.
+     */
+    private function extractConfirmedTotal(string $confirmationMessage): ?float
+    {
+        try {
+            $aiEngine = AIServiceFactory::make($this->store);
+            $response = $aiEngine->getResponse(
+                'Extrae el valor total',
+                "Este es el mensaje de un asistente de ventas confirmando un pedido a un cliente:\n\n\"{$confirmationMessage}\"\n\n¿Cuál es el valor TOTAL final que el cliente debe pagar por este pedido completo (sumando todo lo que incluya)? Responde ÚNICAMENTE el número, sin símbolo de moneda ni separadores de miles, por ejemplo: 54900 o 109800.50. Si el mensaje no indica un valor total claro, responde exactamente \"ninguno\".",
+                []
+            );
+
+            $normalized = trim($response);
+
+            if (mb_strtolower($normalized) === 'ninguno') {
+                return null;
+            }
+
+            $digitsOnly = preg_replace('/[^\d.]/', '', $normalized);
+            $value = $digitsOnly !== '' ? (float) $digitsOnly : null;
+
+            return ($value !== null && $value > 0) ? $value : null;
+        } catch (\Exception $e) {
+            Log::warning('extractConfirmedTotal: AI check failed, falling back to catalog price', [
+                'store_id' => $this->store->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            // Fail open: an API error here shouldn't block lead creation —
+            // the caller falls back to the catalog price.
+            return null;
         }
     }
 

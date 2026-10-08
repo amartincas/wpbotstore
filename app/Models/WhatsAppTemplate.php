@@ -18,12 +18,14 @@ class WhatsAppTemplate extends Model
         'language',
         'type',
         'is_reengagement',
+        'is_lead_alert',
     ];
 
     protected $casts = [
         'parameters_map'  => 'array',
         'is_reengagement' => 'boolean',
         'requires_phone_input' => 'boolean',
+        'is_lead_alert'   => 'boolean',
     ];
 
     public function store(): BelongsTo

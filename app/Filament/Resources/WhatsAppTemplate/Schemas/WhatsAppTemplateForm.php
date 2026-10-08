@@ -95,6 +95,15 @@ class WhatsAppTemplateForm
                 ->inline(false)
                 ->columnSpanFull(),
 
+            Toggle::make('is_lead_alert')
+                ->label('Plantilla de Alerta de Nuevo Lead')
+                ->helperText('Activalo si esta es la plantilla que se envia al "Admin Alert Phone" de la tienda cada vez que se crea un lead nuevo. Solo una por tienda. Usa como parametros: store_name, customer_name, customer_phone, product_service_name, sale_value.')
+                ->onColor('success')
+                ->offColor('gray')
+                ->default(false)
+                ->inline(false)
+                ->columnSpanFull(),
+
         ]);
     }
 }
