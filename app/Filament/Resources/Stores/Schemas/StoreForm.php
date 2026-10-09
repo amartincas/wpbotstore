@@ -69,6 +69,12 @@ class StoreForm
                     ->required()
                     ->columnSpanFull()
                     ->helperText('Verify token for webhook setup'),
+                TextInput::make('wa_app_secret')
+                    ->label('App Secret')
+                    ->password()
+                    ->revealable()
+                    ->columnSpanFull()
+                    ->helperText('From Meta for Developers > this store\'s App > Settings > Basic > App Secret. Required to verify incoming webhook requests are really from Meta (X-Hub-Signature-256) — without it, webhooks from this store are rejected.'),
                 TextInput::make('meta_dataset_id')
                     ->label('Meta Dataset ID')
                     ->columnSpanFull()

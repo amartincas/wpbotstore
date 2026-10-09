@@ -73,6 +73,32 @@ class WhatsAppController extends Controller
 {
     $payload = $request->json()->all();
 
+    // SECURITY: the {store_token} in the URL is never actually checked here
+    // (only the GET verify() handshake uses it) — the store below is
+    // resolved purely from phone_number_id inside the payload body, which
+    // isn't secret. Without verifying Meta's signature, anyone who finds
+    // this URL pattern and a store's phone_number_id could POST a forged
+    // payload and have it processed as a real incoming message. Resolving
+    // the store and checking the signature up front, before any other
+    // processing, closes that gap for both the status and message branches
+    // below.
+    $store = $this->resolveStoreFromPayload($payload);
+
+    if (!$store) {
+        Log::warning('WhatsApp webhook rejected: could not resolve store from payload metadata', [
+            'store_token' => $store_token,
+            'payload_metadata' => data_get($payload, 'entry.0.changes.0.value.metadata'),
+        ]);
+        return response('Not Found', 404);
+    }
+
+    if (!$this->verifySignature($request, $store)) {
+        Log::warning('WhatsApp webhook rejected: invalid or missing signature', [
+            'store_id' => $store->id,
+        ]);
+        return response('Forbidden', 403);
+    }
+
     // 1. PROCESS STATUS EVENTS (Sent, Delivered, Read, Failed)
     if (isset($payload['entry'][0]['changes'][0]['value']['statuses'])) {
         $statuses = $payload['entry'][0]['changes'][0]['value']['statuses'] ?? [];
@@ -136,14 +162,8 @@ class WhatsAppController extends Controller
     // Si pasa los filtros, guardamos el log real del mensaje entrante
     Log::info('Raw WhatsApp Webhook Payload', ['payload' => $payload]);
 
-    $store = $this->resolveStoreFromPayload($payload);
-    if (!$store) {
-        Log::warning('WhatsApp message handling failed: unable to resolve store from webhook metadata', [
-            'store_token' => $store_token,
-            'payload_metadata' => data_get($payload, 'entry.0.changes.0.value.metadata'),
-        ]);
-        return response('Not Found', 404);
-    }
+    // $store was already resolved and its signature verified at the top of
+    // this method.
 
     $type = $message['type'] ?? null;
     $fromPhone = $message['from'] ?? null;
@@ -422,5 +442,38 @@ class WhatsAppController extends Controller
         }
 
         return Store::where('wa_phone_number_id', (string) $phoneNumberId)->first();
+    }
+
+    /**
+     * Verifies Meta's X-Hub-Signature-256 header against the raw request
+     * body, using this store's own Meta App Secret (each store here is
+     * registered under its own separate Meta for Developers app, not a
+     * shared one). This is the only real authentication on this endpoint —
+     * the signature can only be produced by someone who knows the App
+     * Secret, which Meta never exposes to clients, unlike the URL's
+     * {store_token} or the payload's phone_number_id.
+     */
+    private function verifySignature(Request $request, Store $store): bool
+    {
+        if (empty($store->wa_app_secret)) {
+            // Fail closed: a store without a configured secret can't be
+            // verified, so its webhook is rejected rather than silently
+            // trusted. Configure it in the store's WhatsApp settings.
+            Log::warning('WhatsApp webhook rejected: store has no app secret configured', [
+                'store_id' => $store->id,
+            ]);
+            return false;
+        }
+
+        $signatureHeader = $request->header('X-Hub-Signature-256', '');
+
+        if (!str_starts_with($signatureHeader, 'sha256=')) {
+            return false;
+        }
+
+        $expected = hash_hmac('sha256', $request->getContent(), $store->wa_app_secret);
+        $provided = substr($signatureHeader, strlen('sha256='));
+
+        return hash_equals($expected, $provided);
     }
 }

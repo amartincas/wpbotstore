@@ -30,6 +30,13 @@ class StoreWizardForm
                     ->reactive()
                     ->columnSpanFull(),
 
+                TextInput::make('wa_app_secret')
+                    ->label('App Secret')
+                    ->password()
+                    ->revealable()
+                    ->helperText('From Meta for Developers > this store\'s App > Settings > Basic > App Secret. Required to verify incoming webhook requests are really from Meta — without it, webhooks from this store are rejected.')
+                    ->columnSpanFull(),
+
                 TextInput::make('webhook_url')
                     ->label('Webhook URL')
                     //->disabled()
