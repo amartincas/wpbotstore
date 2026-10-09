@@ -7,6 +7,7 @@ use App\Models\ProductImage;
 use App\Models\WhatsAppMessage;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use App\Services\WhatsAppStatusTracker;
 
 class WhatsAppService
@@ -392,24 +393,44 @@ class WhatsAppService
     /**
      * Send an image via WhatsApp Business API.
      *
+     * Uploads the file directly to Meta's Media endpoint and sends it by
+     * media id, instead of handing Meta a public URL to fetch itself
+     * (the 'link' method). Meta's own server-to-server fetch of our image
+     * URLs has been unreliable (~17% of sends failing with "Failed to
+     * connect to server", confirmed with hosting — no fixable cause found
+     * on either side after extensive investigation). Uploading means this
+     * server only ever makes an OUTBOUND request to Meta, same as every
+     * other call in this class, none of which have had this problem.
+     *
      * @param string $toNumber Phone number in format: countrycode[phonenumber]
-     * @param string $imageUrl Full URL to the image (public accessible)
+     * @param string $imagePath Path to the image on the 'public' disk (e.g. ProductImage::image_path)
      * @param Store $store Store with WhatsApp credentials
      * @param string|null $caption Optional caption for the image
      * @return string|null WAMID (Meta's message ID) on success, null on failure
      */
     public static function sendWhatsAppImage(
         string $toNumber,
-        string $imageUrl,
+        string $imagePath,
         Store $store,
         ?string $caption = null
     ): ?string {
         try {
+            $mediaId = self::uploadMedia($imagePath, $store);
+
+            if (!$mediaId) {
+                return null;
+            }
+
             $url = "https://graph.facebook.com/v20.0/{$store->wa_phone_number_id}/messages";
 
             $imagePayload = [
-                'link' => $imageUrl,
+                'id' => $mediaId,
             ];
+
+            // Add caption if provided (appears as text above image)
+            if ($caption) {
+                $imagePayload['caption'] = $caption;
+            }
 
             $payload = [
                 'messaging_product' => 'whatsapp',
@@ -419,18 +440,13 @@ class WhatsAppService
                 'image' => $imagePayload,
             ];
 
-            // Add caption if provided (appears as text above image)
-            if ($caption) {
-                $payload['image']['caption'] = $caption;
-            }
-
             $response = Http::withToken($store->wa_access_token)->post($url, $payload);
 
             if (!$response->successful()) {
                 Log::warning('WhatsApp image send failed', [
                     'store_id' => $store->id,
                     'to' => $toNumber,
-                    'image_url' => $imageUrl,
+                    'media_id' => $mediaId,
                     'status' => $response->status(),
                     'error' => $response->json(),
                 ]);
@@ -442,7 +458,7 @@ class WhatsAppService
             Log::debug('WhatsApp image sent', [
                 'store_id' => $store->id,
                 'to' => $toNumber,
-                'image_url' => $imageUrl,
+                'media_id' => $mediaId,
                 'wamid' => $wamid,
             ]);
 
@@ -455,6 +471,44 @@ class WhatsAppService
             ]);
             return null;
         }
+    }
+
+    /**
+     * Uploads a local file from the 'public' disk directly to Meta's Media
+     * endpoint, returning its media id for use in a subsequent message
+     * send. See sendWhatsAppImage() for why this replaced the 'link' method.
+     */
+    private static function uploadMedia(string $imagePath, Store $store): ?string
+    {
+        if (!Storage::disk('public')->exists($imagePath)) {
+            Log::warning('WhatsApp media upload: local file not found', [
+                'store_id' => $store->id,
+                'image_path' => $imagePath,
+            ]);
+            return null;
+        }
+
+        $url = "https://graph.facebook.com/v20.0/{$store->wa_phone_number_id}/media";
+        $fullPath = Storage::disk('public')->path($imagePath);
+        $mimeType = Storage::disk('public')->mimeType($imagePath) ?: 'image/jpeg';
+
+        $response = Http::withToken($store->wa_access_token)
+            ->attach('file', fopen($fullPath, 'rb'), basename($fullPath), ['Content-Type' => $mimeType])
+            ->post($url, [
+                'messaging_product' => 'whatsapp',
+            ]);
+
+        if (!$response->successful()) {
+            Log::warning('WhatsApp media upload failed', [
+                'store_id' => $store->id,
+                'image_path' => $imagePath,
+                'status' => $response->status(),
+                'error' => $response->json(),
+            ]);
+            return null;
+        }
+
+        return data_get($response->json(), 'id');
     }
 
     /**
@@ -525,10 +579,10 @@ class WhatsAppService
                             'product_name' => $productName,
                         ]);
 
-                        // Send the image
+                        // Send the image (uploaded directly to Meta, not by link — see sendWhatsAppImage())
                         $imageWamid = self::sendWhatsAppImage(
                             $customerNumber,
-                            $image->public_url,
+                            $image->image_path,
                             $store,
                             $productName
                         );
