@@ -468,11 +468,28 @@ class WhatsAppController extends Controller
         $signatureHeader = $request->header('X-Hub-Signature-256', '');
 
         if (!str_starts_with($signatureHeader, 'sha256=')) {
+            // TEMP DIAGNOSTIC — remove once the rejection cause is found.
+            Log::warning('verifySignature: header missing or malformed', [
+                'store_id' => $store->id,
+                'header_present' => $request->hasHeader('X-Hub-Signature-256'),
+                'header_value' => $signatureHeader,
+                'all_header_names' => array_keys($request->headers->all()),
+            ]);
             return false;
         }
 
         $expected = hash_hmac('sha256', $request->getContent(), $store->wa_app_secret);
         $provided = substr($signatureHeader, strlen('sha256='));
+
+        if (!hash_equals($expected, $provided)) {
+            // TEMP DIAGNOSTIC — remove once the rejection cause is found.
+            Log::warning('verifySignature: signature mismatch', [
+                'store_id' => $store->id,
+                'expected' => $expected,
+                'provided' => $provided,
+                'body_length' => strlen($request->getContent()),
+            ]);
+        }
 
         return hash_equals($expected, $provided);
     }
