@@ -1054,23 +1054,46 @@ PROMPT;
     }
 
     /**
-     * Extracts each confirmed order line (item name, quantity, unit price)
-     * from the AI's own confirmation message, so the total can be computed
+     * Extracts each confirmed order line (catalog name + quantity) from the
+     * AI's own confirmation message, so the total can be computed
      * deterministically in PHP afterwards instead of trusting the AI's own
-     * arithmetic. Observed in production: multi-line addition done in
-     * natural language drops a line (or miscomputes the running sum) even
-     * when every individual line price is correct — extraction of
-     * structured data is a task the AI is reliable at; multi-step addition
-     * is not. Returns null when no clean line items can be parsed, so the
-     * caller falls back to extractConfirmedTotal()/catalog price.
+     * arithmetic OR its memory of a unit price. Observed in production:
+     * multi-line addition done in natural language drops a line (or
+     * miscomputes the running sum) even when every individual line price is
+     * correct — AND the AI can misremember a unit price it saw earlier in a
+     * long conversation (e.g. stated $16.000 for an item the catalog prices
+     * at $15.000), even while the arithmetic on that wrong number is itself
+     * flawless. Matching free-text wording to an exact catalog name is a
+     * classification task the AI is reliable at; recalling exact numbers
+     * from memory is not — so this call hands the AI the store's real price
+     * list as reference and asks only for the matching name, never a price.
+     * unit_price is still requested as a fallback for lines that don't match
+     * any catalog product (a manually negotiated price, or a combo quoted as
+     * a single flat-price line) — computeTotalFromLineItems() only uses it
+     * when no catalog match exists. Returns null when no clean line items
+     * can be parsed, so the caller falls back to
+     * extractConfirmedTotal()/catalog price.
      */
     private function extractOrderLineItems(string $confirmationMessage): ?array
     {
         try {
+            $catalogList = Product::where('store_id', $this->store->id)
+                ->get(['name', 'price'])
+                ->map(fn (Product $p) => "{$p->name}: {$p->price}")
+                ->implode("\n");
+
             $aiEngine = AIServiceFactory::make($this->store);
             $response = $aiEngine->getResponse(
                 'Extrae las líneas del pedido',
-                "Este es el mensaje de un asistente de ventas confirmando un pedido a un cliente:\n\n\"{$confirmationMessage}\"\n\nExtrae cada línea del pedido (cada tipo de prenda/producto con su cantidad y precio unitario) como un arreglo JSON, SIN calcular ningún total ni subtotal. Responde ÚNICAMENTE con JSON válido en este formato exacto, sin texto adicional:\n[{\"name\": \"<nombre>\", \"quantity\": <entero>, \"unit_price\": <numero>}]\n\nSi no puedes identificar la cantidad o el precio unitario de una línea, omítela. Si no hay ninguna línea clara, responde exactamente: []",
+                "Lista de precios de esta tienda (nombre exacto de catálogo -> precio):\n{$catalogList}\n\n" .
+                "Este es el mensaje de un asistente de ventas confirmando un pedido a un cliente:\n\n\"{$confirmationMessage}\"\n\n" .
+                "Extrae cada línea del pedido como un arreglo JSON, SIN calcular ningún total, subtotal ni multiplicación. Para cada línea:\n" .
+                "- \"catalog_name\": el nombre EXACTO, tal como aparece en la lista de precios de arriba, de la prenda/producto/combo al que corresponde esta línea (no el nombre que usó el cliente). Si ninguno corresponde, usa null.\n" .
+                "- \"quantity\": la cantidad de esa línea (entero).\n" .
+                "- \"unit_price\": el precio unitario que aparece en el mensaje para esa línea. Ponlo igual si catalog_name tiene valor, se usará solo si catalog_name es null.\n\n" .
+                "Responde ÚNICAMENTE con JSON válido en este formato exacto, sin texto adicional:\n" .
+                "[{\"catalog_name\": \"<nombre o null>\", \"quantity\": <entero>, \"unit_price\": <numero>}]\n\n" .
+                "Si no puedes identificar la cantidad de una línea, omítela. Si no hay ninguna línea clara, responde exactamente: []",
                 []
             );
 
@@ -1083,11 +1106,9 @@ PROMPT;
 
             $validItems = array_values(array_filter($items, function ($item) {
                 return is_array($item)
-                    && isset($item['quantity'], $item['unit_price'])
+                    && isset($item['quantity'])
                     && is_numeric($item['quantity'])
-                    && is_numeric($item['unit_price'])
-                    && (float) $item['quantity'] > 0
-                    && (float) $item['unit_price'] > 0;
+                    && (float) $item['quantity'] > 0;
             }));
 
             return !empty($validItems) ? $validItems : null;
@@ -1104,9 +1125,13 @@ PROMPT;
     }
 
     /**
-     * Sums quantity x unit_price for each extracted order line in plain
-     * PHP — deterministic, unlike asking the AI to add several lines
-     * together in natural language.
+     * Sums quantity x unit price for each extracted order line in plain PHP
+     * — deterministic, unlike asking the AI to add several lines together
+     * in natural language. The unit price itself is resolved against the
+     * real products table whenever the line matched a catalog name — never
+     * trusting a number the AI recalled from earlier in the conversation —
+     * falling back to the AI-stated unit_price only for lines with no
+     * catalog match (negotiated prices, flat-price combos).
      */
     private function computeTotalFromLineItems(?array $items): ?float
     {
@@ -1114,11 +1139,42 @@ PROMPT;
             return null;
         }
 
-        $total = array_reduce($items, function (float $carry, array $item) {
-            return $carry + ((float) $item['quantity'] * (float) $item['unit_price']);
-        }, 0.0);
+        $catalogPrices = Product::where('store_id', $this->store->id)
+            ->get(['name', 'price'])
+            ->mapWithKeys(fn (Product $p) => [$this->normalizeCatalogName($p->name) => (float) $p->price]);
 
-        return $total > 0 ? $total : null;
+        $total = 0.0;
+        $resolvedAny = false;
+
+        foreach ($items as $item) {
+            $quantity = (float) $item['quantity'];
+            $catalogName = $item['catalog_name'] ?? null;
+            $catalogKey = $catalogName ? $this->normalizeCatalogName($catalogName) : null;
+
+            if ($catalogKey && $catalogPrices->has($catalogKey)) {
+                $unitPrice = $catalogPrices->get($catalogKey);
+            } elseif (isset($item['unit_price']) && is_numeric($item['unit_price']) && (float) $item['unit_price'] > 0) {
+                $unitPrice = (float) $item['unit_price'];
+            } else {
+                continue;
+            }
+
+            $total += $quantity * $unitPrice;
+            $resolvedAny = true;
+        }
+
+        return ($resolvedAny && $total > 0) ? $total : null;
+    }
+
+    /**
+     * Case/accent-insensitive key for matching a catalog product name
+     * against the AI's extracted catalog_name — the AI copies the name from
+     * a list it was just given, so an exact match is expected, but this
+     * tolerates trivial differences in casing or accents.
+     */
+    private function normalizeCatalogName(string $name): string
+    {
+        return \Illuminate\Support\Str::ascii(mb_strtolower(trim($name)));
     }
 
     /**
