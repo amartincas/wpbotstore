@@ -1175,17 +1175,31 @@ PROMPT;
     }
 
     /**
-     * Fallback for when the AI didn't copy a catalog name exactly but wrote
-     * it as part of a longer, invented description instead (e.g. "Juego de
-     * sábana (incluye fundas)" instead of just "Sábana"). Looks for any real
-     * catalog name appearing as a whole word inside the extracted name, and
-     * returns its real price — null if none match, so the caller falls back
-     * to the AI-stated unit_price.
+     * Fallback for when the AI didn't copy a catalog name exactly. Covers
+     * both directions this has been observed to fail:
+     * - the AI invented a longer description around a real catalog name
+     *   (e.g. "Juego de sábana (incluye fundas)" when the catalog just says
+     *   "Sábana") — the real name is a whole-word substring of what the AI
+     *   wrote;
+     * - the catalog name itself is long/descriptive and the AI shortened it
+     *   (e.g. catalog has "Juego de Sábana (2 fundas, sábana y sobre
+     *   sábana)" and the AI wrote just "Juego de Sábana") — what the AI
+     *   wrote is a leading substring of the real name.
+     * Requires at least 4 normalized characters on the shorter side so a
+     * short name (e.g. "Top") can't accidentally match as a stray substring
+     * of unrelated text. Returns null if nothing matches, so the caller
+     * falls back to the AI-stated unit_price.
      */
     private function fuzzyMatchCatalogPrice(string $catalogKey, \Illuminate\Support\Collection $catalogPrices): ?float
     {
         foreach ($catalogPrices as $realName => $price) {
-            if (preg_match('/\b' . preg_quote($realName, '/') . '\b/u', $catalogKey)) {
+            if (min(mb_strlen($realName), mb_strlen($catalogKey)) < 4) {
+                continue;
+            }
+
+            if (preg_match('/\b' . preg_quote($realName, '/') . '/u', $catalogKey)
+                || str_starts_with($realName, $catalogKey)
+            ) {
                 return $price;
             }
         }
