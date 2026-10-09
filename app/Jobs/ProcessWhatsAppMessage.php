@@ -388,13 +388,38 @@ class ProcessWhatsAppMessage implements ShouldQueue
                     // wrong for: multiple units ("2 sets" = 2x price), combos/
                     // accumulated multi-item orders (a laundry-service store
                     // with several garment types), or a manually negotiated
-                    // price. The AI's own confirmation message to the customer
-                    // already states the real total it agreed on — extracting
-                    // that is more reliable than the catalog lookup, so it's
-                    // tried first; the catalog price remains the fallback for
-                    // when extraction can't find a clear number (fail open,
-                    // same pattern as addressHasCityAndRegion()).
-                    $saleValue = $this->extractConfirmedTotal($messageToSend) ?? $product?->price;
+                    // price. Three-tier fallback, most reliable first:
+                    // 1) extract each order line (name/qty/unit price) and sum
+                    //    them in PHP — avoids relying on the AI's own
+                    //    multi-line addition, which has been observed in
+                    //    production to drop a line or miscompute the sum even
+                    //    when every individual line was priced correctly;
+                    // 2) extract the total the AI itself stated in its closing
+                    //    message, if (1) couldn't parse clean line items;
+                    // 3) the catalog's single-unit price, as a last resort.
+                    // All three fail open (never block lead creation).
+                    $lineItems = $this->extractOrderLineItems($messageToSend);
+                    $saleValueSource = 'catalog_price';
+
+                    $saleValue = $this->computeTotalFromLineItems($lineItems);
+                    if ($saleValue !== null) {
+                        $saleValueSource = 'line_items_sum';
+                    } else {
+                        $saleValue = $this->extractConfirmedTotal($messageToSend);
+                        if ($saleValue !== null) {
+                            $saleValueSource = 'confirmed_total';
+                        } else {
+                            $saleValue = $product?->price;
+                        }
+                    }
+
+                    Log::info('SALE_VALUE_RESOLUTION: sale_value determined', [
+                        'store_id' => $this->store->id,
+                        'customer_phone' => $this->from,
+                        'sale_value' => $saleValue,
+                        'source' => $saleValueSource,
+                        'line_items' => $lineItems,
+                    ]);
 
                     $lead = Lead::create([
                         'store_id' => $this->store->id,
@@ -1026,6 +1051,74 @@ PROMPT;
             // the caller falls back to the catalog price.
             return null;
         }
+    }
+
+    /**
+     * Extracts each confirmed order line (item name, quantity, unit price)
+     * from the AI's own confirmation message, so the total can be computed
+     * deterministically in PHP afterwards instead of trusting the AI's own
+     * arithmetic. Observed in production: multi-line addition done in
+     * natural language drops a line (or miscomputes the running sum) even
+     * when every individual line price is correct — extraction of
+     * structured data is a task the AI is reliable at; multi-step addition
+     * is not. Returns null when no clean line items can be parsed, so the
+     * caller falls back to extractConfirmedTotal()/catalog price.
+     */
+    private function extractOrderLineItems(string $confirmationMessage): ?array
+    {
+        try {
+            $aiEngine = AIServiceFactory::make($this->store);
+            $response = $aiEngine->getResponse(
+                'Extrae las líneas del pedido',
+                "Este es el mensaje de un asistente de ventas confirmando un pedido a un cliente:\n\n\"{$confirmationMessage}\"\n\nExtrae cada línea del pedido (cada tipo de prenda/producto con su cantidad y precio unitario) como un arreglo JSON, SIN calcular ningún total ni subtotal. Responde ÚNICAMENTE con JSON válido en este formato exacto, sin texto adicional:\n[{\"name\": \"<nombre>\", \"quantity\": <entero>, \"unit_price\": <numero>}]\n\nSi no puedes identificar la cantidad o el precio unitario de una línea, omítela. Si no hay ninguna línea clara, responde exactamente: []",
+                []
+            );
+
+            $normalized = trim(preg_replace('/^```(?:json)?\s*|\s*```$/', '', trim($response)));
+            $items = json_decode($normalized, true);
+
+            if (!is_array($items) || empty($items)) {
+                return null;
+            }
+
+            $validItems = array_values(array_filter($items, function ($item) {
+                return is_array($item)
+                    && isset($item['quantity'], $item['unit_price'])
+                    && is_numeric($item['quantity'])
+                    && is_numeric($item['unit_price'])
+                    && (float) $item['quantity'] > 0
+                    && (float) $item['unit_price'] > 0;
+            }));
+
+            return !empty($validItems) ? $validItems : null;
+        } catch (\Exception $e) {
+            Log::warning('extractOrderLineItems: AI check failed, falling back to extractConfirmedTotal', [
+                'store_id' => $this->store->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            // Fail open: an API error here shouldn't block lead creation —
+            // the caller falls back to extractConfirmedTotal()/catalog price.
+            return null;
+        }
+    }
+
+    /**
+     * Sums quantity x unit_price for each extracted order line in plain
+     * PHP — deterministic, unlike asking the AI to add several lines
+     * together in natural language.
+     */
+    private function computeTotalFromLineItems(?array $items): ?float
+    {
+        if (empty($items)) {
+            return null;
+        }
+
+        $total = array_reduce($items, function (float $carry, array $item) {
+            return $carry + ((float) $item['quantity'] * (float) $item['unit_price']);
+        }, 0.0);
+
+        return $total > 0 ? $total : null;
     }
 
     /**
