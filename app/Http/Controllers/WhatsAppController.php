@@ -83,7 +83,19 @@ class WhatsAppController extends Controller
             if ($wamid && $status) {
                 // Update message status in cache for frontend display
                 WhatsAppStatusTracker::updateStatus($wamid, $status);
-                
+
+                // Meta includes an 'errors' array (code/title/message) only
+                // when status is 'failed' — without logging it, a failed
+                // delivery shows up with no indication of why (expired
+                // media link, recipient opted out, template/session
+                // restriction, etc.).
+                if ($status === 'failed' && !empty($statusEvent['errors'])) {
+                    Log::warning('WhatsApp message delivery failed', [
+                        'wamid' => $wamid,
+                        'errors' => $statusEvent['errors'],
+                    ]);
+                }
+
                 Log::info('WhatsApp message status received', [
                     'wamid' => $wamid,
                     'status' => $status,
