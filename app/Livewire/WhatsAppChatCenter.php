@@ -312,9 +312,9 @@ class WhatsAppChatCenter extends Component
             // 2. Send via WhatsApp API
             $store = Store::find($storeId);
             if ($store) {
-                // Process [IMG:id] tags: sends product images (tracking their WAMID against
-                // this DB message so its status stops showing as pending) and strips the tags
-                $textToSend = WhatsAppService::processAIResponse($this->newMessage, $store, $this->selectedPhone, $message->id);
+                // Process [IMG:id] tags: sends product images (each tracked in its own
+                // whatsapp_messages row, see processAIResponse()) and strips the tags
+                $textToSend = WhatsAppService::processAIResponse($this->newMessage, $store, $this->selectedPhone);
 
                 // Only send a text message if something remains after stripping [IMG:...] tags
                 $wamid = null;

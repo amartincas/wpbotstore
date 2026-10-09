@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Store;
 use App\Models\ProductImage;
+use App\Models\WhatsAppMessage;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use App\Services\WhatsAppStatusTracker;
@@ -462,20 +463,25 @@ class WhatsAppService
      * This function finds all [IMG: product_id] tags in the response,
      * sends the corresponding images via WhatsApp, and returns the cleaned text.
      *
+     * Each image sent gets its own whatsapp_messages row (and its own wamid
+     * tracked against it) — a single AI/operator turn can produce an image
+     * plus separate text, each a distinct WhatsApp message with its own
+     * delivery status. Previously this relied on the caller passing in a
+     * $dbMessageId for a different (text) message and tracking the image's
+     * wamid against that same row; when that row's text was then sent too,
+     * tracking the text's wamid overwrote the image's, so the image's own
+     * delivery status (sent/delivered/failed) silently stopped being
+     * trackable the moment any text accompanied it — which is nearly always.
+     *
      * @param string $responseText Raw AI response containing potential [IMG: id] tags
      * @param Store $store Store with WhatsApp credentials and products
      * @param string $customerNumber Customer's phone number to send images to
-     * @param int|null $dbMessageId If provided, the sent image's WAMID is tracked
-     *                              against this database message id (so its
-     *                              delivery status shows up instead of staying
-     *                              stuck as "pending")
      * @return string Cleaned response text without [IMG: ...] tags
      */
     public static function processAIResponse(
         string $responseText,
         Store $store,
-        string $customerNumber,
-        ?int $dbMessageId = null
+        string $customerNumber
     ): string {
         try {
             // Find all [IMG: id] tags
@@ -527,8 +533,15 @@ class WhatsAppService
                             $productName
                         );
 
-                        if ($imageWamid && $dbMessageId) {
-                            WhatsAppStatusTracker::trackMessage($dbMessageId, $imageWamid);
+                        if ($imageWamid) {
+                            $imageMessage = WhatsAppMessage::create([
+                                'store_id' => $store->id,
+                                'customer_phone' => $customerNumber,
+                                'role' => 'assistant',
+                                'content' => "[Imagen: {$productName}]",
+                            ]);
+
+                            WhatsAppStatusTracker::trackMessage($imageMessage->id, $imageWamid);
                         }
 
                         Log::info('Image send result', [
