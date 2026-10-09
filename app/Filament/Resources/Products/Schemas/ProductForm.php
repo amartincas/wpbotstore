@@ -31,11 +31,26 @@ class ProductForm
                     ->required()
                     ->default(Auth::user()?->store_id),
                 TextInput::make('id')
-                    ->label('Product ID (for AI image references)')
+                    ->label('Image IDs (for AI image references)')
                     ->disabled()
                     ->dehydrated(false)
-                    ->formatStateUsing(fn ($record) => $record?->id ? "Use [IMG:{$record->id}] to show this product" : '(ID will be assigned after creation)')
-                    ->helperText('Reference this ID in system prompts or AI responses to display product images')
+                    ->formatStateUsing(function ($record) {
+                        if (!$record?->id) {
+                            return '(image IDs will be assigned after you upload and save)';
+                        }
+
+                        $imageIds = $record->images()->pluck('id');
+
+                        if ($imageIds->isEmpty()) {
+                            return 'No images uploaded yet.';
+                        }
+
+                        // [IMG:id] is matched against the product_images
+                        // table's own id — NOT this product's id — so each
+                        // uploaded image gets its own distinct tag here.
+                        return $imageIds->map(fn ($id) => "[IMG:{$id}]")->implode(', ');
+                    })
+                    ->helperText('Reference one of these exact tags in system prompts or AI responses to display that specific image. Each image has its own tag — this is NOT the product ID above.')
                     ->columnSpanFull(),
                 TextInput::make('name')
                     ->required(),
