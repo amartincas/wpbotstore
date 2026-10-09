@@ -465,45 +465,14 @@ class WhatsAppController extends Controller
             return false;
         }
 
-        // TEMP DIAGNOSTIC — remove once the rejection cause is found. Logs
-        // length only, never the secret itself: a real Meta App Secret is
-        // exactly 32 characters, so a different length (e.g. 33, from a
-        // trailing newline/space pasted along with it) is an instant tell.
-        Log::warning('verifySignature: secret length check', [
-            'store_id' => $store->id,
-            'secret_length' => strlen($store->wa_app_secret),
-            'secret_trimmed_length' => strlen(trim($store->wa_app_secret)),
-        ]);
-
         $signatureHeader = $request->header('X-Hub-Signature-256', '');
 
         if (!str_starts_with($signatureHeader, 'sha256=')) {
-            // TEMP DIAGNOSTIC — remove once the rejection cause is found.
-            Log::warning('verifySignature: header missing or malformed', [
-                'store_id' => $store->id,
-                'header_present' => $request->hasHeader('X-Hub-Signature-256'),
-                'header_value' => $signatureHeader,
-                'all_header_names' => array_keys($request->headers->all()),
-            ]);
             return false;
         }
 
         $expected = hash_hmac('sha256', $request->getContent(), $store->wa_app_secret);
         $provided = substr($signatureHeader, strlen('sha256='));
-
-        if (!hash_equals($expected, $provided)) {
-            // TEMP DIAGNOSTIC — remove once the rejection cause is found.
-            // Raw body in base64 so we can recompute the HMAC by hand,
-            // outside of Laravel's request lifecycle entirely, to rule out
-            // the body being altered somewhere between Meta and PHP.
-            Log::warning('verifySignature: signature mismatch', [
-                'store_id' => $store->id,
-                'expected' => $expected,
-                'provided' => $provided,
-                'raw_body_base64' => base64_encode($request->getContent()),
-                'body_length' => strlen($request->getContent()),
-            ]);
-        }
 
         return hash_equals($expected, $provided);
     }
