@@ -465,6 +465,16 @@ class WhatsAppController extends Controller
             return false;
         }
 
+        // TEMP DIAGNOSTIC — remove once the rejection cause is found. Logs
+        // length only, never the secret itself: a real Meta App Secret is
+        // exactly 32 characters, so a different length (e.g. 33, from a
+        // trailing newline/space pasted along with it) is an instant tell.
+        Log::warning('verifySignature: secret length check', [
+            'store_id' => $store->id,
+            'secret_length' => strlen($store->wa_app_secret),
+            'secret_trimmed_length' => strlen(trim($store->wa_app_secret)),
+        ]);
+
         $signatureHeader = $request->header('X-Hub-Signature-256', '');
 
         if (!str_starts_with($signatureHeader, 'sha256=')) {
