@@ -1088,7 +1088,7 @@ PROMPT;
                 "Lista de precios de esta tienda (nombre exacto de catálogo -> precio):\n{$catalogList}\n\n" .
                 "Este es el mensaje de un asistente de ventas confirmando un pedido a un cliente:\n\n\"{$confirmationMessage}\"\n\n" .
                 "Extrae cada línea del pedido como un arreglo JSON, SIN calcular ningún total, subtotal ni multiplicación. Para cada línea:\n" .
-                "- \"catalog_name\": el nombre EXACTO, tal como aparece en la lista de precios de arriba, de la prenda/producto/combo al que corresponde esta línea (no el nombre que usó el cliente). Si ninguno corresponde, usa null.\n" .
+                "- \"catalog_name\": copia EXACTAMENTE, carácter por carácter, uno de los nombres que aparecen antes de los dos puntos en la lista de precios de arriba. NO describas el producto, NO agregues aclaraciones ni paréntesis, NO combines ni inventes un nombre distinto al que está en la lista. Ejemplo correcto: \"Sábana\". Ejemplo INCORRECTO: \"Juego de sábana (incluye fundas)\". Si de verdad ningún nombre de la lista corresponde a esa línea, usa null.\n" .
                 "- \"quantity\": la cantidad de esa línea (entero).\n" .
                 "- \"unit_price\": el precio unitario que aparece en el mensaje para esa línea. Ponlo igual si catalog_name tiene valor, se usará solo si catalog_name es null.\n\n" .
                 "Responde ÚNICAMENTE con JSON válido en este formato exacto, sin texto adicional:\n" .
@@ -1151,8 +1151,16 @@ PROMPT;
             $catalogName = $item['catalog_name'] ?? null;
             $catalogKey = $catalogName ? $this->normalizeCatalogName($catalogName) : null;
 
+            $fuzzyPrice = $catalogKey ? $this->fuzzyMatchCatalogPrice($catalogKey, $catalogPrices) : null;
+
             if ($catalogKey && $catalogPrices->has($catalogKey)) {
                 $unitPrice = $catalogPrices->get($catalogKey);
+            } elseif ($fuzzyPrice !== null) {
+                // The AI didn't copy the catalog name exactly (e.g. it added
+                // a description instead of just "Sábana") but a real
+                // catalog name still appears inside what it wrote — safer
+                // to use that than the AI's own recalled unit_price.
+                $unitPrice = $fuzzyPrice;
             } elseif (isset($item['unit_price']) && is_numeric($item['unit_price']) && (float) $item['unit_price'] > 0) {
                 $unitPrice = (float) $item['unit_price'];
             } else {
@@ -1164,6 +1172,25 @@ PROMPT;
         }
 
         return ($resolvedAny && $total > 0) ? $total : null;
+    }
+
+    /**
+     * Fallback for when the AI didn't copy a catalog name exactly but wrote
+     * it as part of a longer, invented description instead (e.g. "Juego de
+     * sábana (incluye fundas)" instead of just "Sábana"). Looks for any real
+     * catalog name appearing as a whole word inside the extracted name, and
+     * returns its real price — null if none match, so the caller falls back
+     * to the AI-stated unit_price.
+     */
+    private function fuzzyMatchCatalogPrice(string $catalogKey, \Illuminate\Support\Collection $catalogPrices): ?float
+    {
+        foreach ($catalogPrices as $realName => $price) {
+            if (preg_match('/\b' . preg_quote($realName, '/') . '\b/u', $catalogKey)) {
+                return $price;
+            }
+        }
+
+        return null;
     }
 
     /**
