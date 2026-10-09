@@ -493,10 +493,14 @@ class WhatsAppController extends Controller
 
         if (!hash_equals($expected, $provided)) {
             // TEMP DIAGNOSTIC — remove once the rejection cause is found.
+            // Raw body in base64 so we can recompute the HMAC by hand,
+            // outside of Laravel's request lifecycle entirely, to rule out
+            // the body being altered somewhere between Meta and PHP.
             Log::warning('verifySignature: signature mismatch', [
                 'store_id' => $store->id,
                 'expected' => $expected,
                 'provided' => $provided,
+                'raw_body_base64' => base64_encode($request->getContent()),
                 'body_length' => strlen($request->getContent()),
             ]);
         }
